@@ -1,4 +1,4 @@
-package com.domu.backend.web;
+package com.domu.backend.controllers;
 
 import com.domu.backend.domain.Permission;
 import com.domu.backend.domain.Role;
