@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "domu-backend"
+version = "0.1.0"
+description = "Backend service for the Domu project"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Domu Team" }
+]
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "pydantic-settings>=2.1.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.1.0",
+    "httpx>=0.27.0"
+]
+
+[tool.setuptools.package-dir]
+"" = "main/src"
+
+[tool.setuptools.packages.find]
+where = ["main/src"]
+
+[tool.pytest.ini_options]
+testpaths = ["main/tests"]
+pythonpath = ["main/src"]
+addopts = "-q"
