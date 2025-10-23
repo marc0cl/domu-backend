@@ -7,6 +7,24 @@ Aplicativo base construido con **Java 21**, **Gradle** y **Javalin 6** que expon
 - Encriptado seguro de contraseñas con **BCrypt (org.mindrot:jbcrypt 0.4)**
 - Generación de tokens JWT mediante **java-jwt 4.4.0**
 
+## Estructura del proyecto
+
+```
+src/
+└── main/
+    ├── java/com/domu/backend/
+    │   ├── Application.java             # Punto de entrada
+    │   ├── config/                      # Configuración cargada desde variables de entorno
+    │   ├── domain/                      # Entidades del dominio organizadas por módulo (core, access, community, finance, facility, staff, ticket, vendor, voting)
+    │   ├── dto/                         # Objetos de transporte expuestos vía HTTP
+    │   ├── infrastructure/
+    │   │   ├── persistence/             # Repositorios JDBC y fábrica de DataSource
+    │   │   └── security/                # Implementaciones de hashing y JWT
+    │   ├── interfaces/http/             # Controladores, mapeadores y servidor Javalin
+    │   └── service/                     # Casos de uso y lógica de aplicación
+    └── resources/                       # Configuración, migraciones y logging
+```
+
 ## Requisitos
 
 - JDK 21
@@ -37,7 +55,7 @@ GRANT ALL PRIVILEGES ON domu.* TO 'domu'@'%';
 FLUSH PRIVILEGES;
 ```
 
-Antes de iniciar la aplicación ejecuta el script `app/src/main/resources/db/migration/V1__create_usuario_table.sql` en tu base de datos para crear la tabla `usuario` con los campos:
+Antes de iniciar la aplicación ejecuta el script `src/main/resources/db/migration/V1__create_usuario_table.sql` en tu base de datos para crear la tabla `usuario` con los campos de referencia:
 
 - `id_usuario` (PK, auto incremental)
 - `id_unidad` (FK opcional)
@@ -45,12 +63,19 @@ Antes de iniciar la aplicación ejecuta el script `app/src/main/resources/db/mig
 - `nombres`, `apellidos`
 - `fecha_nacimiento`
 - `correo` (único)
+- `telefono`
 - `password_hash`
+- `documento`
+- `es_residente` (boolean)
+- `fecha_creacion`
+- `estado`
+
+El modelo relacional completo incorpora además entidades para edificios, unidades, roles, foros comunitarios, personal, turnos, tareas, tickets, módulos financieros, proveedores, reservas, accesos y votaciones, todos representados como `record` en el paquete `com.domu.backend.domain`.
 
 ## Ejecutar el proyecto
 
 ```bash
-./gradlew :app:run
+./gradlew run
 ```
 
 El servidor levanta en `http://localhost:7070`. Endpoints principales:
@@ -64,6 +89,9 @@ El servidor levanta en `http://localhost:7070`. Endpoints principales:
     "lastName": "Pérez",
     "birthDate": "1995-08-20",
     "email": "juan.perez@example.com",
+    "phone": "+56 9 5555 1234",
+    "documentNumber": "12.345.678-9",
+    "resident": true,
     "password": "UnaClaveMuySegura123!"
   }
   ```
@@ -76,7 +104,7 @@ El servidor levanta en `http://localhost:7070`. Endpoints principales:
 Ejecuta la suite de pruebas con:
 
 ```bash
-./gradlew :app:test
+./gradlew test
 ```
 
 Esto valida, entre otras cosas, la política de hash de contraseñas basada en BCrypt.
