@@ -1,7 +1,7 @@
 package com.domu.backend.repository;
 
 import com.domu.backend.domain.ParkingSpace;
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.domu.backend.repository.base.BaseRepository;
 
-public interface ParkingSpaceRepository extends JpaRepository<ParkingSpace, Long> {
+public interface ParkingSpaceRepository extends BaseRepository<ParkingSpace, Long> {
 }

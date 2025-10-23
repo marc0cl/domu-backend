@@ -1,7 +1,7 @@
 package com.domu.backend.repository;
 
 import com.domu.backend.domain.ForumThread;
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.domu.backend.repository.base.BaseRepository;
 
-public interface ForumThreadRepository extends JpaRepository<ForumThread, Long> {
+public interface ForumThreadRepository extends BaseRepository<ForumThread, Long> {
 }

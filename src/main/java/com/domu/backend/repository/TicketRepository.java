@@ -1,7 +1,7 @@
 package com.domu.backend.repository;
 
 import com.domu.backend.domain.Ticket;
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.domu.backend.repository.base.BaseRepository;
 
-public interface TicketRepository extends JpaRepository<Ticket, Long> {
+public interface TicketRepository extends BaseRepository<Ticket, Long> {
 }

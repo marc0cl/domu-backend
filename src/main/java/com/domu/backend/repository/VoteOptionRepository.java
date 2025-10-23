@@ -1,7 +1,7 @@
 package com.domu.backend.repository;
 
 import com.domu.backend.domain.VoteOption;
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.domu.backend.repository.base.BaseRepository;
 
-public interface VoteOptionRepository extends JpaRepository<VoteOption, Long> {
+public interface VoteOptionRepository extends BaseRepository<VoteOption, Long> {
 }

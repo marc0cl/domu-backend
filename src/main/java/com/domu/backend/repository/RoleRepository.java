@@ -1,7 +1,7 @@
 package com.domu.backend.repository;
 
 import com.domu.backend.domain.Role;
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.domu.backend.repository.base.BaseRepository;
 
-public interface RoleRepository extends JpaRepository<Role, Long> {
+public interface RoleRepository extends BaseRepository<Role, Long> {
 }

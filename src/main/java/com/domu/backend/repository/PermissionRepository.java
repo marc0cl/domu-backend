@@ -1,7 +1,7 @@
 package com.domu.backend.repository;
 
 import com.domu.backend.domain.Permission;
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.domu.backend.repository.base.BaseRepository;
 
-public interface PermissionRepository extends JpaRepository<Permission, Long> {
+public interface PermissionRepository extends BaseRepository<Permission, Long> {
 }

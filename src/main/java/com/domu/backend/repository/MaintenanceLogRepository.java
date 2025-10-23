@@ -1,7 +1,7 @@
 package com.domu.backend.repository;
 
 import com.domu.backend.domain.MaintenanceLog;
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.domu.backend.repository.base.BaseRepository;
 
-public interface MaintenanceLogRepository extends JpaRepository<MaintenanceLog, Long> {
+public interface MaintenanceLogRepository extends BaseRepository<MaintenanceLog, Long> {
 }

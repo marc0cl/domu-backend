@@ -1,7 +1,7 @@
 package com.domu.backend.repository;
 
 import com.domu.backend.domain.Shift;
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.domu.backend.repository.base.BaseRepository;
 
-public interface ShiftRepository extends JpaRepository<Shift, Long> {
+public interface ShiftRepository extends BaseRepository<Shift, Long> {
 }

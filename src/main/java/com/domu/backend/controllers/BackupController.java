@@ -1,10 +1,8 @@
 package com.domu.backend.controllers;
 
 import com.domu.backend.domain.BackupRecord;
-import com.domu.backend.domain.Community;
 import com.domu.backend.dto.BackupRecordRequest;
-import com.domu.backend.repository.BackupRecordRepository;
-import com.domu.backend.repository.CommunityRepository;
+import com.domu.backend.services.BackupService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,33 +16,19 @@ import java.util.List;
 @RequestMapping("/api/backups")
 public class BackupController {
 
-    private final BackupRecordRepository backupRecordRepository;
-    private final CommunityRepository communityRepository;
+    private final BackupService backupService;
 
-    public BackupController(BackupRecordRepository backupRecordRepository,
-                            CommunityRepository communityRepository) {
-        this.backupRecordRepository = backupRecordRepository;
-        this.communityRepository = communityRepository;
+    public BackupController(BackupService backupService) {
+        this.backupService = backupService;
     }
 
     @PostMapping
     public BackupRecord createBackupRecord(@Valid @RequestBody BackupRecordRequest request) {
-        Community community = communityRepository.findById(request.communityId())
-                .orElseThrow(() -> new ResourceNotFoundException("Community not found"));
-        BackupRecord record = new BackupRecord();
-        record.setCommunity(community);
-        if (request.backupDate() != null) {
-            record.setBackupDate(request.backupDate());
-        }
-        record.setStorageLocation(request.storageLocation());
-        record.setRpoHours(request.rpoHours());
-        record.setRtoHours(request.rtoHours());
-        record.setLastRestorationTest(request.lastRestorationTest());
-        return backupRecordRepository.save(record);
+        return backupService.createBackupRecord(request);
     }
 
     @GetMapping
     public List<BackupRecord> listBackupRecords() {
-        return backupRecordRepository.findAll();
+        return backupService.listBackupRecords();
     }
 }

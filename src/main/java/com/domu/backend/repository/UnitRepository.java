@@ -1,7 +1,7 @@
 package com.domu.backend.repository;
 
 import com.domu.backend.domain.Unit;
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.domu.backend.repository.base.BaseRepository;
 
-public interface UnitRepository extends JpaRepository<Unit, Long> {
+public interface UnitRepository extends BaseRepository<Unit, Long> {
 }

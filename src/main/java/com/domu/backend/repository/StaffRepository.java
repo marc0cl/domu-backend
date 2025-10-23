@@ -1,7 +1,7 @@
 package com.domu.backend.repository;
 
 import com.domu.backend.domain.Staff;
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.domu.backend.repository.base.BaseRepository;
 
-public interface StaffRepository extends JpaRepository<Staff, Long> {
+public interface StaffRepository extends BaseRepository<Staff, Long> {
 }

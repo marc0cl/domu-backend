@@ -1,7 +1,7 @@
 package com.domu.backend.repository;
 
 import com.domu.backend.domain.MaintenanceSchedule;
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.domu.backend.repository.base.BaseRepository;
 
-public interface MaintenanceScheduleRepository extends JpaRepository<MaintenanceSchedule, Long> {
+public interface MaintenanceScheduleRepository extends BaseRepository<MaintenanceSchedule, Long> {
 }

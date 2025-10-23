@@ -1,7 +1,7 @@
 package com.domu.backend.repository;
 
 import com.domu.backend.domain.ForumCategory;
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.domu.backend.repository.base.BaseRepository;
 
-public interface ForumCategoryRepository extends JpaRepository<ForumCategory, Long> {
+public interface ForumCategoryRepository extends BaseRepository<ForumCategory, Long> {
 }

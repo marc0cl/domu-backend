@@ -1,7 +1,7 @@
 package com.domu.backend.repository;
 
 import com.domu.backend.domain.Amenity;
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.domu.backend.repository.base.BaseRepository;
 
-public interface AmenityRepository extends JpaRepository<Amenity, Long> {
+public interface AmenityRepository extends BaseRepository<Amenity, Long> {
 }
