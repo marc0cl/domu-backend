@@ -11,4 +11,3 @@ plugins {
 }
 
 rootProject.name = "domu-backend"
-include("app")
