@@ -25,7 +25,7 @@ public class UserRepository {
     }
 
     public Optional<User> findByEmail(String email) {
-        String sql = "SELECT id_usuario, id_unidad, id_rol, nombres, apellidos, fecha_nacimiento, correo, password_hash FROM usuario WHERE correo = ?";
+        String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status FROM users WHERE email = ?";
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, email);
@@ -41,7 +41,7 @@ public class UserRepository {
     }
 
     public Optional<User> findById(Long id) {
-        String sql = "SELECT id_usuario, id_unidad, id_rol, nombres, apellidos, fecha_nacimiento, correo, password_hash FROM usuario WHERE id_usuario = ?";
+        String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status FROM users WHERE id = ?";
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, id);
@@ -57,7 +57,7 @@ public class UserRepository {
     }
 
     public User save(User user) {
-        String sql = "INSERT INTO usuario (id_unidad, id_rol, nombres, apellidos, fecha_nacimiento, correo, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO users (unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             if (user.unitId() != null) {
@@ -78,7 +78,15 @@ public class UserRepository {
                 statement.setNull(5, Types.DATE);
             }
             statement.setString(6, user.email());
-            statement.setString(7, user.passwordHash());
+            statement.setString(7, user.phone());
+            statement.setString(8, user.passwordHash());
+            statement.setString(9, user.documentNumber());
+            statement.setBoolean(10, user.resident());
+            if (user.status() != null) {
+                statement.setString(11, user.status());
+            } else {
+                statement.setString(11, "ACTIVE");
+            }
 
             statement.executeUpdate();
             try (ResultSet generatedKeys = statement.getGeneratedKeys()) {
@@ -94,17 +102,23 @@ public class UserRepository {
     }
 
     private User mapRow(ResultSet resultSet) throws SQLException {
-        Long id = resultSet.getLong("id_usuario");
-        Object unitObject = resultSet.getObject("id_unidad");
-        Long unitId = unitObject != null ? resultSet.getLong("id_unidad") : null;
-        Object roleObject = resultSet.getObject("id_rol");
-        Long roleId = roleObject != null ? resultSet.getLong("id_rol") : null;
-        String firstName = resultSet.getString("nombres");
-        String lastName = resultSet.getString("apellidos");
-        Date birthDateRaw = resultSet.getDate("fecha_nacimiento");
+        Long id = resultSet.getLong("id");
+        Object unitObject = resultSet.getObject("unit_id");
+        Long unitId = unitObject != null ? resultSet.getLong("unit_id") : null;
+        Object roleObject = resultSet.getObject("role_id");
+        Long roleId = roleObject != null ? resultSet.getLong("role_id") : null;
+        String firstName = resultSet.getString("first_name");
+        String lastName = resultSet.getString("last_name");
+        Date birthDateRaw = resultSet.getDate("birth_date");
         LocalDate birthDate = birthDateRaw != null ? birthDateRaw.toLocalDate() : null;
-        String email = resultSet.getString("correo");
+        String email = resultSet.getString("email");
+        String phone = resultSet.getString("phone");
         String passwordHash = resultSet.getString("password_hash");
+        String documentNumber = resultSet.getString("document_number");
+        Boolean resident = (Boolean) resultSet.getObject("resident");
+        java.sql.Timestamp createdAtRaw = resultSet.getTimestamp("created_at");
+        java.time.LocalDateTime createdAt = createdAtRaw != null ? createdAtRaw.toLocalDateTime() : null;
+        String status = resultSet.getString("status");
         return new User(
             id,
             unitId,
@@ -112,13 +126,13 @@ public class UserRepository {
             firstName,
             lastName,
             email,
-            null,
+            phone,
             birthDate,
             passwordHash,
-            null,
-            null,
-            null,
-            null
+            documentNumber,
+            resident,
+            createdAt,
+            status
         );
     }
 }
