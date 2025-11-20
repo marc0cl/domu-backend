@@ -1,154 +1,109 @@
 # Domu Backend
 
-Backend API for the Domu project - Proyecto de Título
+Aplicativo base construido con **Java 21**, **Gradle** y **Javalin 6** que expone endpoints para registrar y autenticar usuarios. El proyecto viene configurado con un conjunto fijo de dependencias y buenas prácticas de seguridad, incluyendo:
 
-## Technology Stack
+- Pool de conexiones con [HikariCP 5.1.0](https://mvnrepository.com/artifact/com.zaxxer/HikariCP)
+- Logging con **SLF4J 2.0.13** y **Log4j 2.23.1** (`log4j-core`, `log4j-api`, `log4j-slf4j2-impl`)
+- Encriptado seguro de contraseñas con **BCrypt (org.mindrot:jbcrypt 0.4)**
+- Generación de tokens JWT mediante **java-jwt 4.4.0**
 
-- **Java 17** - Modern Java LTS version
-- **Gradle 9.1.0** - Build automation tool
-- **Javalin 6.7.0** - Lightweight web framework
-- **Jackson** - JSON serialization/deserialization
-- **SLF4J** - Logging framework
-- **JUnit 5** - Testing framework
-
-## Project Structure
+## Estructura del proyecto
 
 ```
-app/
-├── src/
-│   ├── main/
-│   │   ├── java/com/domu/
-│   │   │   ├── config/       # Application configuration
-│   │   │   ├── controller/   # REST API controllers
-│   │   │   ├── service/      # Business logic services
-│   │   │   ├── model/        # Domain models
-│   │   │   ├── util/         # Utility classes
-│   │   │   └── App.java      # Main application class
-│   │   └── resources/
-│   │       ├── application.properties
-│   │       └── simplelogger.properties
-│   └── test/
-│       └── java/com/domu/    # Unit tests
-└── build.gradle.kts          # Gradle build configuration
+src/
+└── main/
+    ├── java/com/domu/
+    │   ├── Main.java                    # Punto de entrada
+    │   ├── config/                      # Configuración cargada desde properties + variables de entorno
+    │   ├── database/                    # Fábrica de DataSource y repositorios JDBC
+    │   ├── domain/                      # Entidades del dominio organizadas por módulo (core, access, community, finance, facility, staff, ticket, vendor, voting)
+    │   ├── dto/                         # Objetos de transporte expuestos vía HTTP
+    │   ├── security/                    # Implementaciones de hashing y JWT
+    │   ├── service/                     # Casos de uso y lógica de aplicación
+    │   └── web/                         # Controladores, mapeadores y servidor Javalin
+    └── resources/                       # Configuración, migraciones y logging
 ```
 
-## Getting Started
+## Requisitos
 
-### Prerequisites
+- JDK 21
+- Docker o un servidor MySQL accesible
 
-- Java 17 or higher
-- Gradle 9.1.0 or higher (or use the included Gradle wrapper)
+## Variables de entorno
 
-### Building the Project
+Las siguientes variables controlan la configuración en tiempo de ejecución. Todas tienen valores por defecto pensados para desarrollo local, pero **deben** sobrescribirse en producción.
+
+| Variable | Descripción | Valor por defecto |
+| --- | --- | --- |
+| `DB_HOST` | Host de MySQL (usado si no hay `DB_URI`) | `localhost` |
+| `DB_PORT` | Puerto de MySQL | `3306` |
+| `DB_NAME` | Base de datos a utilizar | `domu` |
+| `DB_USER` | Usuario de la base de datos | `domu` |
+| `DB_PASSWORD` | Contraseña de la base de datos | `domu` |
+| `DB_URI` | URI JDBC completa (tiene prioridad) | `jdbc:mysql://localhost:3306/domu?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC` |
+| `JWT_SECRET` | Llave privada para firmar JWT | `change-this-secret` |
+| `JWT_ISSUER` | Issuer que se incluirá en los tokens | `domu-backend` |
+| `JWT_EXPIRATION_MINUTES` | Minutos de vigencia del token | `60` |
+| `APP_SERVER_PORT` | Puerto HTTP del servidor | `7000` |
+
+## Preparar la base de datos
+
+Crea una base de datos MySQL y un usuario con permisos de lectura/escritura. Por ejemplo:
+
+```sql
+CREATE DATABASE domu CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'domu'@'%' IDENTIFIED BY 'domu';
+GRANT ALL PRIVILEGES ON domu.* TO 'domu'@'%';
+FLUSH PRIVILEGES;
+```
+
+Antes de iniciar la aplicación ejecuta el script `src/main/resources/migrations/001_create_auth_schema.sql` en tu base de datos para crear las tablas mínimas de autenticación (`rol`, `unidad` y `usuario`). Por ejemplo:
 
 ```bash
-# Using Gradle wrapper (recommended)
-./gradlew build
-
-# Or using system Gradle
-gradle build
+mysql -u${DB_USER} -p${DB_PASSWORD} -h${DB_HOST} -P${DB_PORT} ${DB_NAME} < src/main/resources/migrations/001_create_auth_schema.sql
 ```
 
-### Running the Application
+El modelo relacional completo incorpora además entidades para edificios, unidades, roles, foros comunitarios, personal, turnos, tareas, tickets, módulos financieros, proveedores, reservas, accesos y votaciones, todos representados como `record` en el paquete `com.domu.domain`.
+
+## Ejecutar el proyecto
 
 ```bash
-# Using Gradle wrapper
 ./gradlew run
-
-# Or using system Gradle
-gradle run
 ```
 
-The server will start on port **7000** by default.
+El servidor levanta en `http://localhost:7000` (o el puerto definido en `APP_SERVER_PORT`). Endpoints principales:
 
-### Running Tests
+- `POST /api/auth/register`: registra un nuevo usuario. Ejemplo de cuerpo:
+  ```json
+  {
+    "unitId": 1,
+    "roleId": 2,
+    "firstName": "Juan",
+    "lastName": "Pérez",
+    "birthDate": "1995-08-20",
+    "email": "juan.perez@example.com",
+    "phone": "+56 9 5555 1234",
+    "documentNumber": "12.345.678-9",
+    "resident": true,
+    "password": "UnaClaveMuySegura123!"
+  }
+  ```
+- `POST /api/auth/login`: entrega un token JWT para el usuario autenticado.
+- `GET /api/users/me`: requiere header `Authorization: Bearer <token>` y devuelve la información del usuario autenticado.
+- `GET /health`: verificación rápida de disponibilidad.
+
+## Pruebas
+
+Ejecuta la suite de pruebas con:
 
 ```bash
 ./gradlew test
 ```
 
-## API Endpoints
+Esto valida, entre otras cosas, la política de hash de contraseñas basada en BCrypt.
 
-### Health Check
+## Notas de seguridad
 
-- **GET** `/health` - Health check endpoint
-- **GET** `/` - Welcome endpoint with API information
-
-### User Management (Example CRUD API)
-
-- **GET** `/api/v1/users` - Get all users
-- **GET** `/api/v1/users/{id}` - Get user by ID
-- **POST** `/api/v1/users` - Create a new user
-- **PUT** `/api/v1/users/{id}` - Update user by ID
-- **DELETE** `/api/v1/users/{id}` - Delete user by ID
-
-### Example Requests
-
-#### Get all users
-```bash
-curl http://localhost:7000/api/v1/users
-```
-
-#### Create a user
-```bash
-curl -X POST http://localhost:7000/api/v1/users \
-  -H "Content-Type: application/json" \
-  -d '{"name":"John Doe","email":"john@example.com"}'
-```
-
-#### Get user by ID
-```bash
-curl http://localhost:7000/api/v1/users/1
-```
-
-#### Update user
-```bash
-curl -X PUT http://localhost:7000/api/v1/users/1 \
-  -H "Content-Type: application/json" \
-  -d '{"name":"John Updated","email":"john.updated@example.com"}'
-```
-
-#### Delete user
-```bash
-curl -X DELETE http://localhost:7000/api/v1/users/1
-```
-
-## Development
-
-### Project Features
-
-- ✅ RESTful API design
-- ✅ JSON request/response handling
-- ✅ CORS enabled for development
-- ✅ Structured logging with SLF4J
-- ✅ Exception handling
-- ✅ Request validation
-- ✅ In-memory data storage (for demonstration)
-- ✅ Unit tests with JUnit 5
-
-### Best Practices Implemented
-
-1. **Layered Architecture**: Separation of concerns with controllers, services, and models
-2. **Dependency Management**: Using Gradle version catalog (libs.versions.toml)
-3. **Modern Java Features**: Java 17 with modern syntax and patterns
-4. **JSON Serialization**: Proper date/time handling with Jackson
-5. **Logging**: Structured logging with configurable levels
-6. **Testing**: Comprehensive unit tests using Javalin's test utilities
-7. **Error Handling**: Consistent error responses and validation
-
-## Configuration
-
-Edit `app/src/main/resources/application.properties` to configure:
-
-- Server port
-- Application metadata
-
-Edit `app/src/main/resources/simplelogger.properties` to configure:
-
-- Log levels
-- Log format
-- Package-specific logging
-
-## License
-
-This project is part of a university thesis project (Proyecto de Título).
+- Cambia inmediatamente `APP_JWT_SECRET` por un valor robusto generado aleatoriamente antes de desplegar.
+- Usa conexiones TLS hacia MySQL en entornos productivos ajustando `APP_JDBC_URL`.
+- Considera agregar un servicio de gestión de secretos para credenciales y llaves.

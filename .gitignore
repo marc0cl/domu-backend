@@ -1,7 +1,7 @@
-# Compiled class file
+# Compiled class files
 *.class
 
-# Log file
+# Log files
 *.log
 
 # BlueJ files
@@ -23,30 +23,23 @@
 hs_err_pid*
 replay_pid*
 
-# Ignore Gradle project-specific cache directory
-.gradle
+# Maven
+/target/
+!.mvn/wrapper/maven-wrapper.jar
 
-# Ignore Gradle build output directory
-build
-
-# Ignore Gradle wrapper JAR (keeping properties for version tracking)
-!gradle/wrapper/gradle-wrapper.jar
-
-# IDE specific files
+# IntelliJ
 .idea/
 *.iml
-*.iws
-*.ipr
-.vscode/
-.settings/
-.classpath
+
+# Eclipse
 .project
-bin/
+.classpath
+.settings/
 
-# OS specific files
-.DS_Store
-Thumbs.db
+# VS Code
+.vscode/
 
-# Temporary files
-tmp/
-temp/
+# Python artifacts (legacy cleanup)
+__pycache__/
+*.py[cod]
+*.pyo
