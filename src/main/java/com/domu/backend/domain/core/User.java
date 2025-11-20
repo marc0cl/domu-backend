@@ -10,7 +10,7 @@ public record User(
         Long roleId,
         String firstName,
         String lastName,
-        String email,
+        String email,|
         String phone,
         LocalDate birthDate,
         String passwordHash,
