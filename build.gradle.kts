@@ -20,6 +20,8 @@ dependencies {
     implementation(libs.javaJwt)
     implementation(libs.jbcrypt)
     implementation(libs.jacksonJsr310)
+    implementation(libs.jakartaValidation)
+    implementation(libs.jakartaPersistence)
 
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)

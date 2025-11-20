@@ -11,6 +11,8 @@ junit = "5.10.3"
 assertj = "3.26.3"
 mockito = "5.14.2"
 lombok = "1.18.32"
+jakartaValidation = "3.0.2"
+jakartaPersistence = "3.1.0"
 
 [libraries]
 javalin = { module = "io.javalin:javalin", version.ref = "javalin" }
@@ -27,3 +29,5 @@ junitJupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "juni
 assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 mockito = { module = "org.mockito:mockito-core", version.ref = "mockito" }
 lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
+jakartaValidation = { module = "jakarta.validation:jakarta.validation-api", version.ref = "jakartaValidation" }
+jakartaPersistence = { module = "jakarta.persistence:jakarta.persistence-api", version.ref = "jakartaPersistence" }
