@@ -11,5 +11,8 @@ public class RegistrationRequest {
     private String lastName;
     private LocalDate birthDate;
     private String email;
+    private String phone;
+    private String documentNumber;
+    private Boolean resident;
     private String password;
 }
