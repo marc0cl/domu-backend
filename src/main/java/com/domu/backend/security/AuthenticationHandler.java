@@ -2,8 +2,9 @@ package com.domu.backend.security;
 
 import com.auth0.jwt.exceptions.JWTVerificationException;
 import com.auth0.jwt.interfaces.DecodedJWT;
-import com.domu.backend.domain.User;
+import com.domu.backend.domain.core.User;
 import com.domu.backend.service.UserService;
+import com.google.inject.Inject;
 
 import io.javalin.http.Context;
 import io.javalin.http.Handler;
@@ -16,6 +17,7 @@ public class AuthenticationHandler implements Handler {
     private final JwtProvider jwtProvider;
     private final UserService userService;
 
+    @Inject
     public AuthenticationHandler(JwtProvider jwtProvider, UserService userService) {
         this.jwtProvider = jwtProvider;
         this.userService = userService;

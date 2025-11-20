@@ -1,6 +1,8 @@
 package com.domu.backend.database;
 
-import com.domu.backend.domain.User;
+import com.domu.backend.domain.core.User;
+
+import com.google.inject.Inject;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -17,6 +19,7 @@ public class UserRepository {
 
     private final DataSource dataSource;
 
+    @Inject
     public UserRepository(DataSource dataSource) {
         this.dataSource = dataSource;
     }
@@ -102,6 +105,20 @@ public class UserRepository {
         LocalDate birthDate = birthDateRaw != null ? birthDateRaw.toLocalDate() : null;
         String email = resultSet.getString("correo");
         String passwordHash = resultSet.getString("password_hash");
-        return new User(id, unitId, roleId, firstName, lastName, birthDate, email, passwordHash);
+        return new User(
+            id,
+            unitId,
+            roleId,
+            firstName,
+            lastName,
+            email,
+            null,
+            birthDate,
+            passwordHash,
+            null,
+            null,
+            null,
+            null
+        );
     }
 }

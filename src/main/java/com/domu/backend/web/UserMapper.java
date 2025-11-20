@@ -1,6 +1,6 @@
 package com.domu.backend.web;
 
-import com.domu.backend.domain.User;
+import com.domu.backend.domain.core.User;
 import com.domu.backend.dto.UserResponse;
 import com.domu.backend.security.AuthenticationHandler;
 
@@ -19,7 +19,12 @@ public final class UserMapper {
                 user.firstName(),
                 user.lastName(),
                 user.birthDate(),
-                user.email()
+                user.email(),
+                user.phone(),
+                user.documentNumber(),
+                user.resident(),
+                user.createdAt(),
+                user.status()
         );
     }
 

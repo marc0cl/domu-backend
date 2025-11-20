@@ -1,10 +1,12 @@
 package com.domu.backend.service;
 
 import com.domu.backend.database.UserRepository;
-import com.domu.backend.domain.User;
+import com.domu.backend.domain.core.User;
 import com.domu.backend.security.PasswordHasher;
+import com.google.inject.Inject;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -15,20 +17,46 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordHasher passwordHasher;
 
+    @Inject
     public UserService(UserRepository userRepository, PasswordHasher passwordHasher) {
         this.userRepository = userRepository;
         this.passwordHasher = passwordHasher;
     }
 
-    public User registerUser(Long unitId, Long roleId, String firstName, String lastName, LocalDate birthDate, String email, String rawPassword) {
-        validateRegistration(firstName, lastName, email, rawPassword);
+    public User registerUser(
+        Long unitId,
+        Long roleId,
+        String firstName,
+        String lastName,
+        LocalDate birthDate,
+        String email,
+        String phone,
+        String documentNumber,
+        Boolean resident,
+        String rawPassword
+    ) {
+        validateRegistration(firstName, lastName, email, phone, documentNumber, resident, rawPassword);
         String normalizedEmail = email.toLowerCase();
         userRepository.findByEmail(normalizedEmail).ifPresent(existing -> {
             throw new UserAlreadyExistsException(normalizedEmail);
         });
 
         String passwordHash = passwordHasher.hash(rawPassword);
-        User user = new User(null, unitId, roleId, firstName.trim(), lastName.trim(), birthDate, normalizedEmail, passwordHash);
+        User user = new User(
+            null,
+            unitId,
+            roleId,
+            firstName.trim(),
+            lastName.trim(),
+            normalizedEmail,
+            phone,
+            birthDate,
+            passwordHash,
+            documentNumber,
+            resident,
+            LocalDateTime.now(),
+            "ACTIVE"
+        );
         return userRepository.save(user);
     }
 
@@ -46,9 +74,26 @@ public class UserService {
         return userRepository.findById(id);
     }
 
-    private void validateRegistration(String firstName, String lastName, String email, String rawPassword) {
+    private void validateRegistration(
+        String firstName,
+        String lastName,
+        String email,
+        String phone,
+        String documentNumber,
+        Boolean resident,
+        String rawPassword
+    ) {
         if (isBlank(firstName) || isBlank(lastName)) {
             throw new ValidationException("Names and last names are required");
+        }
+        if (isBlank(phone)) {
+            throw new ValidationException("phone is required");
+        }
+        if (isBlank(documentNumber)) {
+            throw new ValidationException("documentNumber is required");
+        }
+        if (resident == null) {
+            throw new ValidationException("resident is required");
         }
         if (isBlank(email) || !EMAIL_PATTERN.matcher(email).matches()) {
             throw new ValidationException("A valid email is required");

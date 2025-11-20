@@ -1,5 +1,7 @@
 plugins {
-    application
+    id("java")
+    id("application")
+    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 group = "com.domu"
@@ -7,6 +9,14 @@ version = "0.1.0"
 
 repositories {
     mavenCentral()
+}
+
+val javaVersion = JavaLanguageVersion.of(21)
+
+java {
+    toolchain {
+        languageVersion.set(javaVersion)
+    }
 }
 
 dependencies {
@@ -22,6 +32,7 @@ dependencies {
     implementation(libs.jacksonJsr310)
     implementation(libs.jakartaValidation)
     implementation(libs.jakartaPersistence)
+    implementation(libs.guice)
 
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)
@@ -32,18 +43,31 @@ dependencies {
     testImplementation(libs.junitJupiter)
     testImplementation(libs.assertj)
     testImplementation(libs.mockito)
-}
-
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
+    testImplementation(libs.javalinTesttools)
 }
 
 application {
-    mainClass = "com.domu.backend.Application"
+    mainClass.set("com.domu.backend.Main")
+    applicationDefaultJvmArgs = listOf(
+        "-Duser.timezone=UTC",
+        "-Dfile.encoding=UTF-8"
+    )
 }
 
 tasks.test {
     useJUnitPlatform()
+    systemProperty("javalin.port", "0")
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.encoding = "UTF-8"
+    options.release.set(javaVersion.asInt())
+}
+
+tasks.withType<Jar>().configureEach {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.named("shadowJar") {
+    dependsOn("test")
 }

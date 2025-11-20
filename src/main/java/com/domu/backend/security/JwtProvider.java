@@ -1,6 +1,6 @@
 package com.domu.backend.security;
 
-import com.domu.backend.domain.User;
+import com.domu.backend.domain.core.User;
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.algorithms.Algorithm;
