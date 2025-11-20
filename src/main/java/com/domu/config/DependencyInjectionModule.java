@@ -106,17 +106,17 @@ public class DependencyInjectionModule extends AbstractModule {
 
     private static String resolve(Properties properties, String propertyKey, String envKey, String defaultValue) {
         String rawValue = properties.getProperty(propertyKey);
-        String envValue = resolvePlaceholder(rawValue);
-        if (envValue != null) {
-            return envValue;
+        String resolvedFromPlaceholder = resolvePlaceholder(rawValue);
+        if (resolvedFromPlaceholder != null && !resolvedFromPlaceholder.isBlank()) {
+            return resolvedFromPlaceholder;
         }
 
-        envValue = System.getenv(envKey);
+        String envValue = System.getenv(envKey);
         if (envValue != null && !envValue.isBlank()) {
             return envValue;
         }
 
-        if (rawValue != null && !rawValue.isBlank()) {
+        if (rawValue != null && !rawValue.isBlank() && !rawValue.startsWith("${")) {
             return rawValue;
         }
 
@@ -133,7 +133,7 @@ public class DependencyInjectionModule extends AbstractModule {
             if (envValue != null && !envValue.isBlank()) {
                 return envValue;
             }
-            return "";
+            return null;
         }
         return null;
     }

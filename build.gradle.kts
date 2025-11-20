@@ -47,7 +47,7 @@ dependencies {
 }
 
 application {
-    mainClass.set("com.domu.backend.Main")
+    mainClass.set("com.domu.Main")
     applicationDefaultJvmArgs = listOf(
         "-Duser.timezone=UTC",
         "-Dfile.encoding=UTF-8"
