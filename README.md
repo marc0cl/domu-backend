@@ -12,16 +12,15 @@ Aplicativo base construido con **Java 21**, **Gradle** y **Javalin 6** que expon
 ```
 src/
 └── main/
-    ├── java/com/domu/backend/
-    │   ├── Application.java             # Punto de entrada
-    │   ├── config/                      # Configuración cargada desde variables de entorno
+    ├── java/com/domu/
+    │   ├── Main.java                    # Punto de entrada
+    │   ├── config/                      # Configuración cargada desde properties + variables de entorno
+    │   ├── database/                    # Fábrica de DataSource y repositorios JDBC
     │   ├── domain/                      # Entidades del dominio organizadas por módulo (core, access, community, finance, facility, staff, ticket, vendor, voting)
     │   ├── dto/                         # Objetos de transporte expuestos vía HTTP
-    │   ├── infrastructure/
-    │   │   ├── persistence/             # Repositorios JDBC y fábrica de DataSource
-    │   │   └── security/                # Implementaciones de hashing y JWT
-    │   ├── interfaces/http/             # Controladores, mapeadores y servidor Javalin
-    │   └── service/                     # Casos de uso y lógica de aplicación
+    │   ├── security/                    # Implementaciones de hashing y JWT
+    │   ├── service/                     # Casos de uso y lógica de aplicación
+    │   └── web/                         # Controladores, mapeadores y servidor Javalin
     └── resources/                       # Configuración, migraciones y logging
 ```
 
@@ -36,13 +35,16 @@ Las siguientes variables controlan la configuración en tiempo de ejecución. To
 
 | Variable | Descripción | Valor por defecto |
 | --- | --- | --- |
-| `APP_JDBC_URL` | URL JDBC de MySQL | `jdbc:mysql://localhost:3306/domu?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC` |
-| `APP_DB_USER` | Usuario de la base de datos | `domu` |
-| `APP_DB_PASSWORD` | Contraseña de la base de datos | `domu` |
-| `APP_JWT_SECRET` | Llave privada para firmar JWT | `change-this-secret` |
-| `APP_JWT_ISSUER` | Issuer que se incluirá en los tokens | `domu-backend` |
-| `APP_JWT_EXP_MINUTES` | Minutos de vigencia del token | `60` |
-| `APP_SERVER_PORT` | Puerto HTTP del servidor | `7070` |
+| `DB_HOST` | Host de MySQL (usado si no hay `DB_URI`) | `localhost` |
+| `DB_PORT` | Puerto de MySQL | `3306` |
+| `DB_NAME` | Base de datos a utilizar | `domu` |
+| `DB_USER` | Usuario de la base de datos | `domu` |
+| `DB_PASSWORD` | Contraseña de la base de datos | `domu` |
+| `DB_URI` | URI JDBC completa (tiene prioridad) | `jdbc:mysql://localhost:3306/domu?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC` |
+| `JWT_SECRET` | Llave privada para firmar JWT | `change-this-secret` |
+| `JWT_ISSUER` | Issuer que se incluirá en los tokens | `domu-backend` |
+| `JWT_EXPIRATION_MINUTES` | Minutos de vigencia del token | `60` |
+| `APP_SERVER_PORT` | Puerto HTTP del servidor | `7000` |
 
 ## Preparar la base de datos
 
@@ -55,22 +57,13 @@ GRANT ALL PRIVILEGES ON domu.* TO 'domu'@'%';
 FLUSH PRIVILEGES;
 ```
 
-Antes de iniciar la aplicación ejecuta el script `src/main/resources/db/migration/V1__create_usuario_table.sql` en tu base de datos para crear la tabla `usuario` con los campos de referencia:
+Antes de iniciar la aplicación ejecuta el script `src/main/resources/migrations/001_create_auth_schema.sql` en tu base de datos para crear las tablas mínimas de autenticación (`rol`, `unidad` y `usuario`). Por ejemplo:
 
-- `id_usuario` (PK, auto incremental)
-- `id_unidad` (FK opcional)
-- `id_rol` (FK opcional)
-- `nombres`, `apellidos`
-- `fecha_nacimiento`
-- `correo` (único)
-- `telefono`
-- `password_hash`
-- `documento`
-- `es_residente` (boolean)
-- `fecha_creacion`
-- `estado`
+```bash
+mysql -u${DB_USER} -p${DB_PASSWORD} -h${DB_HOST} -P${DB_PORT} ${DB_NAME} < src/main/resources/migrations/001_create_auth_schema.sql
+```
 
-El modelo relacional completo incorpora además entidades para edificios, unidades, roles, foros comunitarios, personal, turnos, tareas, tickets, módulos financieros, proveedores, reservas, accesos y votaciones, todos representados como `record` en el paquete `com.domu.backend.domain`.
+El modelo relacional completo incorpora además entidades para edificios, unidades, roles, foros comunitarios, personal, turnos, tareas, tickets, módulos financieros, proveedores, reservas, accesos y votaciones, todos representados como `record` en el paquete `com.domu.domain`.
 
 ## Ejecutar el proyecto
 
@@ -78,7 +71,7 @@ El modelo relacional completo incorpora además entidades para edificios, unidad
 ./gradlew run
 ```
 
-El servidor levanta en `http://localhost:7070`. Endpoints principales:
+El servidor levanta en `http://localhost:7000` (o el puerto definido en `APP_SERVER_PORT`). Endpoints principales:
 
 - `POST /api/auth/register`: registra un nuevo usuario. Ejemplo de cuerpo:
   ```json
