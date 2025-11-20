@@ -8,18 +8,27 @@ import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.Type;
 
-public class AppConfig {
+public record AppConfig(
+        String jdbcUrl,
+        String dbUser,
+        String dbPassword,
+        String jwtSecret,
+        String jwtIssuer,
+        long jwtExpirationMinutes,
+        int serverPort
+) {
+
     public static final int DEFAULT_PORT = 7000;
-    
+
     public static class CustomJsonMapper implements JsonMapper {
         private final ObjectMapper objectMapper;
-        
+
         public CustomJsonMapper() {
             this.objectMapper = new ObjectMapper()
                 .registerModule(new JavaTimeModule())
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         }
-        
+
         @NotNull
         @Override
         public String toJsonString(@NotNull Object obj, @NotNull Type type) {
@@ -29,7 +38,7 @@ public class AppConfig {
                 throw new RuntimeException("Error serializing to JSON", e);
             }
         }
-        
+
         @NotNull
         @Override
         public <T> T fromJsonString(@NotNull String json, @NotNull Type targetType) {
