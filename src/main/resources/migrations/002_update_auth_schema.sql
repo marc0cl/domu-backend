@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS buildings (
     city VARCHAR(100),
     admin_phone VARCHAR(50),
     admin_email VARCHAR(150),
-    created_at DATE DEFAULT CURRENT_DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     status VARCHAR(20) DEFAULT 'ACTIVE'
 );
 
