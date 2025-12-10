@@ -129,6 +129,77 @@ curl http://localhost:7000/api/users/me \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+## Ejemplos de curl para visitas
+
+> Requiere haber aplicado las migraciones `005_visits.sql` y contar con un usuario residente (con `unitId` asociado) o un conserje/admin para asignar la unidad manualmente.
+
+Registrar visita (residente: la unidad se toma del usuario):
+```bash
+curl -X POST http://localhost:7000/api/visits \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "visitorName": "María Soto",
+    "visitorDocument": "12345678-9",
+    "visitorType": "VISIT",
+    "validForMinutes": 120
+  }'
+```
+
+Registrar visita asignando unidad (conserje/admin, usa `unitId` explícito):
+```bash
+curl -X POST http://localhost:7000/api/visits \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "visitorName": "Proveedor Técnico",
+    "visitorDocument": "11111111-1",
+    "visitorType": "PROVEEDOR",
+    "unitId": 12,
+    "validForMinutes": 90
+  }'
+```
+
+Listar mis visitas (residente ve las propias; admin/conserje ve las que registró):
+```bash
+curl http://localhost:7000/api/visits/my \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Marcar ingreso de una visita (usa `authorizationId` devuelto al crear/listar):
+```bash
+curl -X POST http://localhost:7000/api/visits/1/check-in \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+## Ejemplos de curl para incidentes
+
+> Requiere haber aplicado la migración `006_incidents.sql`.
+
+Reportar incidente (residente o admin/conserje):
+```bash
+curl -X POST http://localhost:7000/api/incidents \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Fuga de agua en pasillo",
+    "description": "Se observa agua corriendo por el ducto del piso 3",
+    "category": "maintenance",
+    "priority": "HIGH"
+  }'
+```
+
+Listar incidentes propios (residente) o todos (admin/conserje) con filtro de fechas opcional:
+```bash
+# sin filtro
+curl http://localhost:7000/api/incidents/my \
+  -H "Authorization: Bearer $TOKEN"
+
+# con rango de fechas (YYYY-MM-DD)
+curl "http://localhost:7000/api/incidents/my?from=2025-01-01&to=2025-01-31" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ## Pruebas
 
 Ejecuta la suite de pruebas con:

@@ -43,3 +43,7 @@ replay_pid*
 __pycache__/
 *.py[cod]
 *.pyo
+/.gradle/
+.gradle/
+/.gradle
+/build

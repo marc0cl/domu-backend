@@ -11,6 +11,7 @@ public record CommonExpensePeriod(
         int month,
         LocalDate generatedAt,
         LocalDate dueDate,
+        BigDecimal reserveAmount,
         BigDecimal totalAmount,
         String status
 ) {
@@ -18,6 +19,7 @@ public record CommonExpensePeriod(
         Objects.requireNonNull(buildingId, "buildingId");
         Objects.requireNonNull(generatedAt, "generatedAt");
         Objects.requireNonNull(dueDate, "dueDate");
+        Objects.requireNonNull(reserveAmount, "reserveAmount");
         Objects.requireNonNull(totalAmount, "totalAmount");
     }
 }
