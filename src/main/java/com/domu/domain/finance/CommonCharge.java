@@ -6,10 +6,13 @@ import java.util.Objects;
 public record CommonCharge(
         Long id,
         Long periodId,
+        Long unitId,
         String description,
         BigDecimal amount,
         String type,
-        Boolean prorateable
+        Boolean prorateable,
+        String payerType,
+        String receiptText
 ) {
     public CommonCharge {
         Objects.requireNonNull(periodId, "periodId");

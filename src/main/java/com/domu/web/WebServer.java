@@ -1,11 +1,23 @@
 package com.domu.web;
 
 import com.domu.domain.core.User;
+import com.domu.dto.ApproveBuildingRequest;
 import com.domu.dto.AuthResponse;
+import com.domu.dto.BuildingRequestResponse;
+import com.domu.dto.CreateBuildingRequest;
 import com.domu.dto.ErrorResponse;
 import com.domu.dto.LoginRequest;
 import com.domu.dto.RegistrationRequest;
 import com.domu.dto.UserResponse;
+import com.domu.dto.AddCommonChargesRequest;
+import com.domu.dto.CommonPaymentRequest;
+import com.domu.dto.CreateCommonExpensePeriodRequest;
+import com.domu.dto.CreateVisitRequest;
+import com.domu.dto.IncidentRequest;
+import com.domu.service.BuildingService;
+import com.domu.service.CommonExpenseService;
+import com.domu.service.VisitService;
+import com.domu.service.IncidentService;
 import com.domu.security.AuthenticationHandler;
 import com.domu.security.JwtProvider;
 import com.domu.service.InvalidCredentialsException;
@@ -34,6 +46,10 @@ public final class WebServer {
 
     private final HikariDataSource dataSource;
     private final UserService userService;
+    private final CommonExpenseService commonExpenseService;
+    private final BuildingService buildingService;
+    private final VisitService visitService;
+    private final IncidentService incidentService;
     private final AuthenticationHandler authenticationHandler;
     private final JwtProvider jwtProvider;
     private final ObjectMapper objectMapper;
@@ -44,12 +60,20 @@ public final class WebServer {
     public WebServer(
         final HikariDataSource dataSource,
         final UserService userService,
+        final CommonExpenseService commonExpenseService,
+        final BuildingService buildingService,
+        final VisitService visitService,
+        final IncidentService incidentService,
         final AuthenticationHandler authenticationHandler,
         final JwtProvider jwtProvider,
         final ObjectMapper objectMapper
     ) {
         this.dataSource = dataSource;
         this.userService = userService;
+        this.commonExpenseService = commonExpenseService;
+        this.buildingService = buildingService;
+        this.visitService = visitService;
+        this.incidentService = incidentService;
         this.authenticationHandler = authenticationHandler;
         this.jwtProvider = jwtProvider;
         this.objectMapper = objectMapper;
@@ -118,10 +142,87 @@ public final class WebServer {
         });
 
         javalin.before("/api/users/*", authenticationHandler);
+        javalin.before("/api/finance/*", authenticationHandler);
+        javalin.before("/api/buildings/*", authenticationHandler);
+        javalin.before("/api/visits", authenticationHandler);
+        javalin.before("/api/visits/*", authenticationHandler);
+        javalin.before("/api/incidents", authenticationHandler);
+        javalin.before("/api/incidents/*", authenticationHandler);
 
         javalin.get("/api/users/me", ctx -> {
             UserResponse response = UserMapper.toResponseFromContext(ctx);
             ctx.json(response);
+        });
+
+        javalin.post("/api/finance/periods", ctx -> {
+            CreateCommonExpensePeriodRequest request = validateCreatePeriod(ctx.bodyValidator(CreateCommonExpensePeriodRequest.class));
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(commonExpenseService.createPeriod(request));
+        });
+
+        javalin.post("/api/finance/periods/{periodId}/charges", ctx -> {
+            long periodId = Long.parseLong(ctx.pathParam("periodId"));
+            AddCommonChargesRequest request = validateAddCharges(ctx.bodyValidator(AddCommonChargesRequest.class));
+            ctx.json(commonExpenseService.addCharges(periodId, request));
+        });
+
+        javalin.get("/api/finance/my-charges", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(commonExpenseService.getChargesForUser(user));
+        });
+
+        javalin.post("/api/finance/charges/{chargeId}/pay", ctx -> {
+            long chargeId = Long.parseLong(ctx.pathParam("chargeId"));
+            CommonPaymentRequest request = validatePayment(ctx.bodyValidator(CommonPaymentRequest.class));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(commonExpenseService.payCharge(chargeId, user, request));
+        });
+
+        javalin.post("/api/buildings/requests", ctx -> {
+            CreateBuildingRequest request = validateCreateBuilding(ctx.bodyValidator(CreateBuildingRequest.class));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.status(HttpStatus.CREATED);
+            BuildingRequestResponse response = buildingService.createRequest(request, user);
+            ctx.json(response);
+        });
+
+        javalin.post("/api/buildings/requests/{requestId}/approve", ctx -> {
+            long requestId = Long.parseLong(ctx.pathParam("requestId"));
+            ApproveBuildingRequest request = validateApproveBuilding(ctx.bodyValidator(ApproveBuildingRequest.class));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(buildingService.approve(requestId, request, user));
+        });
+
+        javalin.post("/api/visits", ctx -> {
+            CreateVisitRequest request = validateCreateVisit(ctx.bodyValidator(CreateVisitRequest.class));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(visitService.createVisit(user, request));
+        });
+
+        javalin.get("/api/visits/my", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(visitService.getVisitsForUser(user));
+        });
+
+        javalin.post("/api/visits/{authorizationId}/check-in", ctx -> {
+            long authorizationId = Long.parseLong(ctx.pathParam("authorizationId"));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(visitService.registerCheckIn(authorizationId, user));
+        });
+
+        javalin.get("/api/incidents/my", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            String from = ctx.queryParam("from");
+            String to = ctx.queryParam("to");
+            ctx.json(incidentService.list(user, parseDate(from), parseDate(to)));
+        });
+
+        javalin.post("/api/incidents", ctx -> {
+            IncidentRequest request = validateIncident(ctx.bodyValidator(IncidentRequest.class));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(incidentService.create(user, request));
         });
     }
 
@@ -162,6 +263,65 @@ public final class WebServer {
                 .check(req -> req.getEmail() != null && !req.getEmail().isBlank(), "email is required")
                 .check(req -> req.getPassword() != null && !req.getPassword().isBlank(), "password is required")
                 .get();
+    }
+
+    private CreateCommonExpensePeriodRequest validateCreatePeriod(BodyValidator<CreateCommonExpensePeriodRequest> validator) {
+        return validator
+                .check(req -> req.getBuildingId() != null, "buildingId es requerido")
+                .check(req -> req.getYear() != null, "year es requerido")
+                .check(req -> req.getMonth() != null, "month es requerido")
+                .check(req -> req.getDueDate() != null, "dueDate es requerido")
+                .get();
+    }
+
+    private AddCommonChargesRequest validateAddCharges(BodyValidator<AddCommonChargesRequest> validator) {
+        return validator
+                .check(req -> req.getCharges() != null && !req.getCharges().isEmpty(), "Debe existir al menos un cargo")
+                .get();
+    }
+
+    private CommonPaymentRequest validatePayment(BodyValidator<CommonPaymentRequest> validator) {
+        return validator
+                .check(req -> req.getAmount() != null, "amount es requerido")
+                .check(req -> req.getPaymentMethod() != null && !req.getPaymentMethod().isBlank(), "paymentMethod es requerido")
+                .get();
+    }
+
+    private CreateBuildingRequest validateCreateBuilding(BodyValidator<CreateBuildingRequest> validator) {
+        return validator
+                .check(req -> req.getName() != null && !req.getName().isBlank(), "name es requerido")
+                .check(req -> req.getAddress() != null && !req.getAddress().isBlank(), "address es requerido")
+                .check(req -> req.getProofText() != null && !req.getProofText().isBlank(), "proofText es requerido")
+                .get();
+    }
+
+    private ApproveBuildingRequest validateApproveBuilding(BodyValidator<ApproveBuildingRequest> validator) {
+        return validator.get();
+    }
+
+    private CreateVisitRequest validateCreateVisit(BodyValidator<CreateVisitRequest> validator) {
+        return validator
+                .check(req -> req.getVisitorName() != null && !req.getVisitorName().isBlank(), "visitorName es requerido")
+                .get();
+    }
+
+    private IncidentRequest validateIncident(BodyValidator<IncidentRequest> validator) {
+        return validator
+                .check(req -> req.getTitle() != null && !req.getTitle().isBlank(), "title es requerido")
+                .check(req -> req.getDescription() != null && !req.getDescription().isBlank(), "description es requerido")
+                .check(req -> req.getCategory() != null && !req.getCategory().isBlank(), "category es requerido")
+                .get();
+    }
+
+    private java.time.LocalDate parseDate(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return java.time.LocalDate.parse(raw);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     public int getPort() {
