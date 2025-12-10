@@ -13,7 +13,8 @@ public record CommonPayment(
         BigDecimal amount,
         String paymentMethod,
         String reference,
-        String status
+        String status,
+        String receiptText
 ) {
     public CommonPayment {
         Objects.requireNonNull(unitId, "unitId");

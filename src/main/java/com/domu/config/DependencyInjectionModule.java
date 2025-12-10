@@ -1,11 +1,20 @@
 package com.domu.config;
 
+import com.domu.database.BuildingRepository;
+import com.domu.database.CommonExpenseRepository;
 import com.domu.database.DataSourceFactory;
 import com.domu.database.UserRepository;
+import com.domu.database.VisitRepository;
+import com.domu.database.IncidentRepository;
+import com.domu.database.VisitRepository;
 import com.domu.security.AuthenticationHandler;
 import com.domu.security.BCryptPasswordHasher;
 import com.domu.security.JwtProvider;
 import com.domu.security.PasswordHasher;
+import com.domu.service.BuildingService;
+import com.domu.service.CommonExpenseService;
+import com.domu.service.VisitService;
+import com.domu.service.IncidentService;
 import com.domu.service.UserService;
 import com.domu.web.WebServer;
 import com.google.inject.AbstractModule;
@@ -39,7 +48,15 @@ public class DependencyInjectionModule extends AbstractModule {
     protected void configure() {
         bind(WebServer.class).in(Scopes.SINGLETON);
         bind(UserService.class).in(Scopes.SINGLETON);
+        bind(CommonExpenseService.class).in(Scopes.SINGLETON);
+        bind(BuildingService.class).in(Scopes.SINGLETON);
+        bind(VisitService.class).in(Scopes.SINGLETON);
+        bind(IncidentService.class).in(Scopes.SINGLETON);
         bind(UserRepository.class).in(Scopes.SINGLETON);
+        bind(CommonExpenseRepository.class).in(Scopes.SINGLETON);
+        bind(BuildingRepository.class).in(Scopes.SINGLETON);
+        bind(VisitRepository.class).in(Scopes.SINGLETON);
+        bind(IncidentRepository.class).in(Scopes.SINGLETON);
         bind(AuthenticationHandler.class).in(Scopes.SINGLETON);
         bind(PasswordHasher.class).to(BCryptPasswordHasher.class).in(Scopes.SINGLETON);
     }
