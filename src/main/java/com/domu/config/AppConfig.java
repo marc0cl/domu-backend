@@ -15,7 +15,8 @@ public record AppConfig(
         String jwtSecret,
         String jwtIssuer,
         Long jwtExpirationMinutes,
-        Integer serverPort
+        Integer serverPort,
+        String boxDeveloperToken
 ) {
 
     public static final Integer DEFAULT_PORT = 7000;

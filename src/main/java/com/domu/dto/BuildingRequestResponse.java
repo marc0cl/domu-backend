@@ -7,7 +7,10 @@ public record BuildingRequestResponse(
         String status,
         Long buildingId,
         LocalDateTime createdAt,
-        String reviewNotes
+        String reviewNotes,
+        String boxFolderId,
+        String boxFileId,
+        String boxFileName
 ) {
 }
 

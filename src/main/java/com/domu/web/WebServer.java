@@ -17,6 +17,7 @@ import com.domu.dto.VisitContactRequest;
 import com.domu.dto.VisitFromContactRequest;
 import com.domu.dto.BuildingSummaryResponse;
 import com.domu.dto.IncidentRequest;
+import com.domu.dto.CommunityRegistrationDocument;
 import com.domu.service.BuildingService;
 import com.domu.service.CommonExpenseService;
 import com.domu.service.VisitService;
@@ -38,12 +39,17 @@ import com.google.inject.Singleton;
 import io.javalin.Javalin;
 import io.javalin.http.HttpStatus;
 import io.javalin.json.JavalinJackson;
+import io.javalin.http.UploadedFile;
 import io.javalin.validation.BodyValidator;
+import io.javalin.http.Context;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.zaxxer.hikari.HikariDataSource;
+
+import java.io.IOException;
+import java.io.InputStream;
 
 @Singleton
 public final class WebServer {
@@ -203,10 +209,11 @@ public final class WebServer {
         });
 
         javalin.post("/api/buildings/requests", ctx -> {
-            CreateBuildingRequest request = validateCreateBuilding(ctx.bodyValidator(CreateBuildingRequest.class));
+            CreateBuildingRequest request = parseCreateBuilding(ctx);
+            CommunityRegistrationDocument document = extractRegistrationDocument(ctx);
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.status(HttpStatus.CREATED);
-            BuildingRequestResponse response = buildingService.createRequest(request, user);
+            BuildingRequestResponse response = buildingService.createRequest(request, user, document);
             ctx.json(response);
         });
 
@@ -354,12 +361,48 @@ public final class WebServer {
                 .get();
     }
 
-    private CreateBuildingRequest validateCreateBuilding(BodyValidator<CreateBuildingRequest> validator) {
-        return validator
-                .check(req -> req.getName() != null && !req.getName().isBlank(), "name es requerido")
-                .check(req -> req.getAddress() != null && !req.getAddress().isBlank(), "address es requerido")
-                .check(req -> req.getProofText() != null && !req.getProofText().isBlank(), "proofText es requerido")
-                .get();
+    private CreateBuildingRequest parseCreateBuilding(Context ctx) {
+        if (ctx.contentType() != null && ctx.contentType().toLowerCase().contains("multipart/form-data")) {
+            CreateBuildingRequest request = new CreateBuildingRequest();
+            request.setName(ctx.formParam("name"));
+            request.setTowerLabel(ctx.formParam("towerLabel"));
+            request.setAddress(ctx.formParam("address"));
+            request.setCommune(ctx.formParam("commune"));
+            request.setCity(ctx.formParam("city"));
+            request.setAdminPhone(ctx.formParam("adminPhone"));
+            request.setAdminEmail(ctx.formParam("adminEmail"));
+            request.setAdminName(ctx.formParam("adminName"));
+            request.setAdminDocument(ctx.formParam("adminDocument"));
+            request.setFloors(parseInteger(ctx.formParam("floors"), "floors"));
+            request.setUnitsCount(parseInteger(ctx.formParam("unitsCount"), "unitsCount"));
+            request.setLatitude(parseDouble(ctx.formParam("latitude"), "latitude"));
+            request.setLongitude(parseDouble(ctx.formParam("longitude"), "longitude"));
+            request.setProofText(ctx.formParam("proofText"));
+            return validateCreateBuilding(request);
+        }
+        return validateCreateBuilding(ctx.bodyValidator(CreateBuildingRequest.class).get());
+    }
+
+    private CreateBuildingRequest validateCreateBuilding(CreateBuildingRequest request) {
+        if (request == null) {
+            throw new ValidationException("El cuerpo es obligatorio");
+        }
+        if (request.getName() == null || request.getName().isBlank()) {
+            throw new ValidationException("name es requerido");
+        }
+        if (request.getAddress() == null || request.getAddress().isBlank()) {
+            throw new ValidationException("address es requerido");
+        }
+        if (request.getProofText() == null || request.getProofText().isBlank()) {
+            throw new ValidationException("proofText es requerido");
+        }
+        if (request.getLatitude() != null && (request.getLatitude() < -90 || request.getLatitude() > 90)) {
+            throw new ValidationException("latitude debe estar entre -90 y 90");
+        }
+        if (request.getLongitude() != null && (request.getLongitude() < -180 || request.getLongitude() > 180)) {
+            throw new ValidationException("longitude debe estar entre -180 y 180");
+        }
+        return request;
     }
 
     private ApproveBuildingRequest validateApproveBuilding(BodyValidator<ApproveBuildingRequest> validator) {
@@ -408,6 +451,48 @@ public final class WebServer {
                 .check(req -> req.getDescription() != null && !req.getDescription().isBlank(), "description es requerido")
                 .check(req -> req.getCategory() != null && !req.getCategory().isBlank(), "category es requerido")
                 .get();
+    }
+
+    private CommunityRegistrationDocument extractRegistrationDocument(Context ctx) {
+        UploadedFile uploaded = ctx.uploadedFile("document");
+        if (uploaded == null) {
+            throw new ValidationException("document es requerido");
+        }
+        try (InputStream content = uploaded.content()) {
+            byte[] bytes = content.readAllBytes();
+            if (bytes.length == 0) {
+                throw new ValidationException("El archivo de registro está vacío");
+            }
+            return new CommunityRegistrationDocument(
+                    uploaded.filename() != null ? uploaded.filename() : "registro.pdf",
+                    uploaded.contentType(),
+                    bytes
+            );
+        } catch (IOException e) {
+            throw new ValidationException("No se pudo leer el archivo de registro: " + e.getMessage());
+        }
+    }
+
+    private Integer parseInteger(String raw, String fieldName) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException e) {
+            throw new ValidationException(fieldName + " debe ser numérico");
+        }
+    }
+
+    private Double parseDouble(String raw, String fieldName) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(raw);
+        } catch (NumberFormatException e) {
+            throw new ValidationException(fieldName + " debe ser numérico");
+        }
     }
 
     private java.time.LocalDate parseDate(String raw) {
