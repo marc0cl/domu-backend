@@ -178,6 +178,22 @@ public class BuildingRepository {
         }
     }
 
+    public Long findBuildingIdByUnitId(Long unitId) {
+        String sql = "SELECT building_id FROM housing_units WHERE id = ?";
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, unitId);
+            try (ResultSet rs = statement.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getLong("building_id");
+                }
+            }
+            return null;
+        } catch (SQLException e) {
+            throw new RepositoryException("Error obteniendo edificio por unidad", e);
+        }
+    }
+
     private BuildingRequest mapRequest(ResultSet rs) throws SQLException {
         Long id = rs.getLong("id");
         Long requestedBy = rs.getLong("requested_by_user_id");

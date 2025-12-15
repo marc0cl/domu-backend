@@ -4,6 +4,7 @@ import com.domu.database.BuildingRepository;
 import com.domu.database.CommonExpenseRepository;
 import com.domu.database.DataSourceFactory;
 import com.domu.database.UserRepository;
+import com.domu.database.UserBuildingRepository;
 import com.domu.database.VisitRepository;
 import com.domu.database.VisitContactRepository;
 import com.domu.database.IncidentRepository;
@@ -57,6 +58,7 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(UserRepository.class).in(Scopes.SINGLETON);
         bind(CommonExpenseRepository.class).in(Scopes.SINGLETON);
         bind(BuildingRepository.class).in(Scopes.SINGLETON);
+        bind(UserBuildingRepository.class).in(Scopes.SINGLETON);
         bind(VisitRepository.class).in(Scopes.SINGLETON);
         bind(VisitContactRepository.class).in(Scopes.SINGLETON);
         bind(IncidentRepository.class).in(Scopes.SINGLETON);

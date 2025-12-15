@@ -15,6 +15,7 @@ import com.domu.dto.CreateCommonExpensePeriodRequest;
 import com.domu.dto.CreateVisitRequest;
 import com.domu.dto.VisitContactRequest;
 import com.domu.dto.VisitFromContactRequest;
+import com.domu.dto.BuildingSummaryResponse;
 import com.domu.dto.IncidentRequest;
 import com.domu.service.BuildingService;
 import com.domu.service.CommonExpenseService;
@@ -27,6 +28,8 @@ import com.domu.service.InvalidCredentialsException;
 import com.domu.service.UserAlreadyExistsException;
 import com.domu.service.UserService;
 import com.domu.service.ValidationException;
+import com.domu.database.UserBuildingRepository;
+import com.domu.database.BuildingRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.google.inject.Inject;
@@ -57,6 +60,8 @@ public final class WebServer {
     private final AuthenticationHandler authenticationHandler;
     private final JwtProvider jwtProvider;
     private final ObjectMapper objectMapper;
+    private final UserBuildingRepository userBuildingRepository;
+    private final BuildingRepository buildingRepository;
     private final Javalin app;
     private Integer port = -1;
 
@@ -71,7 +76,9 @@ public final class WebServer {
         final IncidentService incidentService,
         final AuthenticationHandler authenticationHandler,
         final JwtProvider jwtProvider,
-        final ObjectMapper objectMapper
+        final ObjectMapper objectMapper,
+        final UserBuildingRepository userBuildingRepository,
+        final BuildingRepository buildingRepository
     ) {
         this.dataSource = dataSource;
         this.userService = userService;
@@ -83,6 +90,8 @@ public final class WebServer {
         this.authenticationHandler = authenticationHandler;
         this.jwtProvider = jwtProvider;
         this.objectMapper = objectMapper;
+        this.userBuildingRepository = userBuildingRepository;
+        this.buildingRepository = buildingRepository;
         this.app = createApp();
     }
 
@@ -137,14 +146,18 @@ public final class WebServer {
                     request.getPassword()
             );
             ctx.status(HttpStatus.CREATED);
-            ctx.json(UserMapper.toResponse(created));
+            var buildings = loadBuildings(created);
+            Long activeBuildingId = resolveActiveBuildingId(created, buildings);
+            ctx.json(UserMapper.toResponse(created, buildings, activeBuildingId));
         });
 
         javalin.post("/api/auth/login", ctx -> {
             LoginRequest request = validateLogin(ctx.bodyValidator(LoginRequest.class));
             User user = userService.authenticate(request.getEmail(), request.getPassword());
             String token = jwtProvider.generateToken(user);
-            ctx.json(new AuthResponse(token, UserMapper.toResponse(user)));
+            var buildings = loadBuildings(user);
+            Long activeBuildingId = resolveActiveBuildingId(user, buildings);
+            ctx.json(new AuthResponse(token, UserMapper.toResponse(user, buildings, activeBuildingId)));
         });
 
         javalin.before("/api/users/*", authenticationHandler);
@@ -158,7 +171,10 @@ public final class WebServer {
         javalin.before("/api/incidents/*", authenticationHandler);
 
         javalin.get("/api/users/me", ctx -> {
-            UserResponse response = UserMapper.toResponseFromContext(ctx);
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            var buildings = loadBuildings(user);
+            Long activeBuildingId = resolveActiveBuildingId(user, buildings);
+            UserResponse response = UserMapper.toResponseFromContext(ctx, buildings, activeBuildingId);
             ctx.json(response);
         });
 
@@ -364,6 +380,26 @@ public final class WebServer {
 
     private VisitFromContactRequest validateVisitFromContact(BodyValidator<VisitFromContactRequest> validator) {
         return validator.get();
+    }
+
+    private java.util.List<BuildingSummaryResponse> loadBuildings(User user) {
+        if (user == null) {
+            return java.util.List.of();
+        }
+        return userBuildingRepository.findBuildingsForUser(user.id());
+    }
+
+    private Long resolveActiveBuildingId(User user, java.util.List<BuildingSummaryResponse> buildings) {
+        if (user != null && user.unitId() != null) {
+            Long buildingId = buildingRepository.findBuildingIdByUnitId(user.unitId());
+            if (buildingId != null) {
+                return buildingId;
+            }
+        }
+        if (buildings != null && !buildings.isEmpty()) {
+            return buildings.get(0).id();
+        }
+        return null;
     }
 
     private IncidentRequest validateIncident(BodyValidator<IncidentRequest> validator) {
