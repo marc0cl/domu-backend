@@ -169,12 +169,28 @@ public class BuildingRepository {
                 statement.setNull(4, java.sql.Types.BIGINT);
             }
             statement.setLong(5, requestId);
-            int updated = statement.executeUpdate();
+            Integer updated = statement.executeUpdate();
             if (updated == 0) {
                 throw new RepositoryException("No se pudo aprobar la solicitud (¿ya aprobada o inexistente?)");
             }
         } catch (SQLException e) {
             throw new RepositoryException("Error aprobando solicitud de edificio", e);
+        }
+    }
+
+    public Long findBuildingIdByUnitId(Long unitId) {
+        String sql = "SELECT building_id FROM housing_units WHERE id = ?";
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, unitId);
+            try (ResultSet rs = statement.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getLong("building_id");
+                }
+            }
+            return null;
+        } catch (SQLException e) {
+            throw new RepositoryException("Error obteniendo edificio por unidad", e);
         }
     }
 

@@ -100,7 +100,7 @@ public class IncidentRepository {
         List<IncidentRow> results = new ArrayList<>();
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
-            int idx = 1;
+            Integer idx = 1;
             if (userId != null) {
                 statement.setLong(idx++, userId);
             }

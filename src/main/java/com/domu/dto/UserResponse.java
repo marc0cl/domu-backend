@@ -15,6 +15,8 @@ public record UserResponse(
         String documentNumber,
         Boolean resident,
         LocalDateTime createdAt,
-        String status
+        String status,
+        Long activeBuildingId,
+        java.util.List<BuildingSummaryResponse> buildings
 ) {
 }

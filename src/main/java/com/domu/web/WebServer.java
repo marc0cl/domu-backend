@@ -13,10 +13,14 @@ import com.domu.dto.AddCommonChargesRequest;
 import com.domu.dto.CommonPaymentRequest;
 import com.domu.dto.CreateCommonExpensePeriodRequest;
 import com.domu.dto.CreateVisitRequest;
+import com.domu.dto.VisitContactRequest;
+import com.domu.dto.VisitFromContactRequest;
+import com.domu.dto.BuildingSummaryResponse;
 import com.domu.dto.IncidentRequest;
 import com.domu.service.BuildingService;
 import com.domu.service.CommonExpenseService;
 import com.domu.service.VisitService;
+import com.domu.service.VisitContactService;
 import com.domu.service.IncidentService;
 import com.domu.security.AuthenticationHandler;
 import com.domu.security.JwtProvider;
@@ -24,6 +28,8 @@ import com.domu.service.InvalidCredentialsException;
 import com.domu.service.UserAlreadyExistsException;
 import com.domu.service.UserService;
 import com.domu.service.ValidationException;
+import com.domu.database.UserBuildingRepository;
+import com.domu.database.BuildingRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.google.inject.Inject;
@@ -49,12 +55,15 @@ public final class WebServer {
     private final CommonExpenseService commonExpenseService;
     private final BuildingService buildingService;
     private final VisitService visitService;
+    private final VisitContactService visitContactService;
     private final IncidentService incidentService;
     private final AuthenticationHandler authenticationHandler;
     private final JwtProvider jwtProvider;
     private final ObjectMapper objectMapper;
+    private final UserBuildingRepository userBuildingRepository;
+    private final BuildingRepository buildingRepository;
     private final Javalin app;
-    private int port = -1;
+    private Integer port = -1;
 
     @Inject
     public WebServer(
@@ -63,24 +72,30 @@ public final class WebServer {
         final CommonExpenseService commonExpenseService,
         final BuildingService buildingService,
         final VisitService visitService,
+        final VisitContactService visitContactService,
         final IncidentService incidentService,
         final AuthenticationHandler authenticationHandler,
         final JwtProvider jwtProvider,
-        final ObjectMapper objectMapper
+        final ObjectMapper objectMapper,
+        final UserBuildingRepository userBuildingRepository,
+        final BuildingRepository buildingRepository
     ) {
         this.dataSource = dataSource;
         this.userService = userService;
         this.commonExpenseService = commonExpenseService;
         this.buildingService = buildingService;
         this.visitService = visitService;
+        this.visitContactService = visitContactService;
         this.incidentService = incidentService;
         this.authenticationHandler = authenticationHandler;
         this.jwtProvider = jwtProvider;
         this.objectMapper = objectMapper;
+        this.userBuildingRepository = userBuildingRepository;
+        this.buildingRepository = buildingRepository;
         this.app = createApp();
     }
 
-    public void start(final int port) {
+    public void start(final Integer port) {
         Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
         app.start(port);
         this.port = port;
@@ -131,14 +146,18 @@ public final class WebServer {
                     request.getPassword()
             );
             ctx.status(HttpStatus.CREATED);
-            ctx.json(UserMapper.toResponse(created));
+            var buildings = loadBuildings(created);
+            Long activeBuildingId = resolveActiveBuildingId(created, buildings);
+            ctx.json(UserMapper.toResponse(created, buildings, activeBuildingId));
         });
 
         javalin.post("/api/auth/login", ctx -> {
             LoginRequest request = validateLogin(ctx.bodyValidator(LoginRequest.class));
             User user = userService.authenticate(request.getEmail(), request.getPassword());
             String token = jwtProvider.generateToken(user);
-            ctx.json(new AuthResponse(token, UserMapper.toResponse(user)));
+            var buildings = loadBuildings(user);
+            Long activeBuildingId = resolveActiveBuildingId(user, buildings);
+            ctx.json(new AuthResponse(token, UserMapper.toResponse(user, buildings, activeBuildingId)));
         });
 
         javalin.before("/api/users/*", authenticationHandler);
@@ -146,11 +165,16 @@ public final class WebServer {
         javalin.before("/api/buildings/*", authenticationHandler);
         javalin.before("/api/visits", authenticationHandler);
         javalin.before("/api/visits/*", authenticationHandler);
+        javalin.before("/api/visit-contacts", authenticationHandler);
+        javalin.before("/api/visit-contacts/*", authenticationHandler);
         javalin.before("/api/incidents", authenticationHandler);
         javalin.before("/api/incidents/*", authenticationHandler);
 
         javalin.get("/api/users/me", ctx -> {
-            UserResponse response = UserMapper.toResponseFromContext(ctx);
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            var buildings = loadBuildings(user);
+            Long activeBuildingId = resolveActiveBuildingId(user, buildings);
+            UserResponse response = UserMapper.toResponseFromContext(ctx, buildings, activeBuildingId);
             ctx.json(response);
         });
 
@@ -161,7 +185,7 @@ public final class WebServer {
         });
 
         javalin.post("/api/finance/periods/{periodId}/charges", ctx -> {
-            long periodId = Long.parseLong(ctx.pathParam("periodId"));
+            Long periodId = Long.parseLong(ctx.pathParam("periodId"));
             AddCommonChargesRequest request = validateAddCharges(ctx.bodyValidator(AddCommonChargesRequest.class));
             ctx.json(commonExpenseService.addCharges(periodId, request));
         });
@@ -172,7 +196,7 @@ public final class WebServer {
         });
 
         javalin.post("/api/finance/charges/{chargeId}/pay", ctx -> {
-            long chargeId = Long.parseLong(ctx.pathParam("chargeId"));
+            Long chargeId = Long.parseLong(ctx.pathParam("chargeId"));
             CommonPaymentRequest request = validatePayment(ctx.bodyValidator(CommonPaymentRequest.class));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.json(commonExpenseService.payCharge(chargeId, user, request));
@@ -187,7 +211,7 @@ public final class WebServer {
         });
 
         javalin.post("/api/buildings/requests/{requestId}/approve", ctx -> {
-            long requestId = Long.parseLong(ctx.pathParam("requestId"));
+            Long requestId = Long.parseLong(ctx.pathParam("requestId"));
             ApproveBuildingRequest request = validateApproveBuilding(ctx.bodyValidator(ApproveBuildingRequest.class));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.json(buildingService.approve(requestId, request, user));
@@ -205,8 +229,51 @@ public final class WebServer {
             ctx.json(visitService.getVisitsForUser(user));
         });
 
+        javalin.get("/api/visits/history", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            String search = ctx.queryParam("q");
+            ctx.json(visitService.getVisitHistory(user, search));
+        });
+
+        javalin.post("/api/visit-contacts", ctx -> {
+            VisitContactRequest request = validateVisitContact(ctx.bodyValidator(VisitContactRequest.class));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(visitContactService.create(user, request));
+        });
+
+        javalin.get("/api/visit-contacts", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            String search = ctx.queryParam("q");
+            Integer limit = null;
+            try {
+                String rawLimit = ctx.queryParam("limit");
+                if (rawLimit != null && !rawLimit.isBlank()) {
+                    limit = Integer.parseInt(rawLimit);
+                }
+            } catch (NumberFormatException ignored) {
+                // si no es número, dejamos limit en null
+            }
+            ctx.json(visitContactService.list(user, search, limit));
+        });
+
+        javalin.delete("/api/visit-contacts/{contactId}", ctx -> {
+            Long contactId = Long.parseLong(ctx.pathParam("contactId"));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            visitContactService.delete(user, contactId);
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        javalin.post("/api/visit-contacts/{contactId}/register", ctx -> {
+            Long contactId = Long.parseLong(ctx.pathParam("contactId"));
+            VisitFromContactRequest request = validateVisitFromContact(ctx.bodyValidator(VisitFromContactRequest.class));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(visitContactService.registerFromContact(user, contactId, request));
+        });
+
         javalin.post("/api/visits/{authorizationId}/check-in", ctx -> {
-            long authorizationId = Long.parseLong(ctx.pathParam("authorizationId"));
+            Long authorizationId = Long.parseLong(ctx.pathParam("authorizationId"));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.json(visitService.registerCheckIn(authorizationId, user));
         });
@@ -305,6 +372,36 @@ public final class WebServer {
                 .get();
     }
 
+    private VisitContactRequest validateVisitContact(BodyValidator<VisitContactRequest> validator) {
+        return validator
+                .check(req -> req.getVisitorName() != null && !req.getVisitorName().isBlank(), "visitorName es requerido")
+                .get();
+    }
+
+    private VisitFromContactRequest validateVisitFromContact(BodyValidator<VisitFromContactRequest> validator) {
+        return validator.get();
+    }
+
+    private java.util.List<BuildingSummaryResponse> loadBuildings(User user) {
+        if (user == null) {
+            return java.util.List.of();
+        }
+        return userBuildingRepository.findBuildingsForUser(user.id());
+    }
+
+    private Long resolveActiveBuildingId(User user, java.util.List<BuildingSummaryResponse> buildings) {
+        if (user != null && user.unitId() != null) {
+            Long buildingId = buildingRepository.findBuildingIdByUnitId(user.unitId());
+            if (buildingId != null) {
+                return buildingId;
+            }
+        }
+        if (buildings != null && !buildings.isEmpty()) {
+            return buildings.get(0).id();
+        }
+        return null;
+    }
+
     private IncidentRequest validateIncident(BodyValidator<IncidentRequest> validator) {
         return validator
                 .check(req -> req.getTitle() != null && !req.getTitle().isBlank(), "title es requerido")
@@ -324,7 +421,7 @@ public final class WebServer {
         }
     }
 
-    public int getPort() {
+    public Integer getPort() {
         return port;
     }
 }
