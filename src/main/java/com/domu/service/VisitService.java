@@ -130,7 +130,6 @@ public class VisitService {
         }
         return history;
     }
-
     public VisitResponse registerCheckIn(Long authorizationId, User user) {
         VisitRepository.VisitSummaryRow existing;
         if (isResident(user)) {

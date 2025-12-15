@@ -250,7 +250,6 @@ public class VisitRepository {
             throw new RepositoryException("Error buscando visitas del residente", e);
         }
     }
-
     private String baseSummaryQuery() {
         return """
                 SELECT va.id AS authorization_id,
