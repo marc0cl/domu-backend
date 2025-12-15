@@ -221,6 +221,36 @@ public class VisitRepository {
         }
     }
 
+    public List<VisitSummaryRow> searchAuthorizationsForResident(Long residentUserId, String searchTerm) {
+        StringBuilder sql = new StringBuilder(baseSummaryQuery())
+                .append(" WHERE va.resident_user_id = ? ");
+        boolean hasSearch = searchTerm != null && !searchTerm.isBlank();
+        if (hasSearch) {
+            sql.append("AND (LOWER(v.visitor_name) LIKE ? OR REPLACE(REPLACE(REPLACE(LOWER(COALESCE(v.visitor_document, '')), '.', ''), '-', ''), ' ', '') LIKE ?) ");
+        }
+        sql.append("ORDER BY va.created_at DESC");
+
+        List<VisitSummaryRow> visits = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql.toString())) {
+            statement.setLong(1, residentUserId);
+            if (hasSearch) {
+                String normalizedSearch = searchTerm.toLowerCase().trim();
+                String normalizedDocument = normalizedSearch.replace(".", "").replace("-", "").replace(" ", "");
+                statement.setString(2, "%" + normalizedSearch + "%");
+                statement.setString(3, "%" + normalizedDocument + "%");
+            }
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    visits.add(mapSummary(rs));
+                }
+            }
+            return visits;
+        } catch (SQLException e) {
+            throw new RepositoryException("Error buscando visitas del residente", e);
+        }
+    }
+
     private String baseSummaryQuery() {
         return """
                 SELECT va.id AS authorization_id,

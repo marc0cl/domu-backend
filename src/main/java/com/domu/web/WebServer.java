@@ -13,10 +13,13 @@ import com.domu.dto.AddCommonChargesRequest;
 import com.domu.dto.CommonPaymentRequest;
 import com.domu.dto.CreateCommonExpensePeriodRequest;
 import com.domu.dto.CreateVisitRequest;
+import com.domu.dto.VisitContactRequest;
+import com.domu.dto.VisitFromContactRequest;
 import com.domu.dto.IncidentRequest;
 import com.domu.service.BuildingService;
 import com.domu.service.CommonExpenseService;
 import com.domu.service.VisitService;
+import com.domu.service.VisitContactService;
 import com.domu.service.IncidentService;
 import com.domu.security.AuthenticationHandler;
 import com.domu.security.JwtProvider;
@@ -49,6 +52,7 @@ public final class WebServer {
     private final CommonExpenseService commonExpenseService;
     private final BuildingService buildingService;
     private final VisitService visitService;
+    private final VisitContactService visitContactService;
     private final IncidentService incidentService;
     private final AuthenticationHandler authenticationHandler;
     private final JwtProvider jwtProvider;
@@ -63,6 +67,7 @@ public final class WebServer {
         final CommonExpenseService commonExpenseService,
         final BuildingService buildingService,
         final VisitService visitService,
+        final VisitContactService visitContactService,
         final IncidentService incidentService,
         final AuthenticationHandler authenticationHandler,
         final JwtProvider jwtProvider,
@@ -73,6 +78,7 @@ public final class WebServer {
         this.commonExpenseService = commonExpenseService;
         this.buildingService = buildingService;
         this.visitService = visitService;
+        this.visitContactService = visitContactService;
         this.incidentService = incidentService;
         this.authenticationHandler = authenticationHandler;
         this.jwtProvider = jwtProvider;
@@ -146,6 +152,8 @@ public final class WebServer {
         javalin.before("/api/buildings/*", authenticationHandler);
         javalin.before("/api/visits", authenticationHandler);
         javalin.before("/api/visits/*", authenticationHandler);
+        javalin.before("/api/visit-contacts", authenticationHandler);
+        javalin.before("/api/visit-contacts/*", authenticationHandler);
         javalin.before("/api/incidents", authenticationHandler);
         javalin.before("/api/incidents/*", authenticationHandler);
 
@@ -203,6 +211,49 @@ public final class WebServer {
         javalin.get("/api/visits/my", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.json(visitService.getVisitsForUser(user));
+        });
+
+        javalin.get("/api/visits/history", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            String search = ctx.queryParam("q");
+            ctx.json(visitService.getVisitHistory(user, search));
+        });
+
+        javalin.post("/api/visit-contacts", ctx -> {
+            VisitContactRequest request = validateVisitContact(ctx.bodyValidator(VisitContactRequest.class));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(visitContactService.create(user, request));
+        });
+
+        javalin.get("/api/visit-contacts", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            String search = ctx.queryParam("q");
+            Integer limit = null;
+            try {
+                String rawLimit = ctx.queryParam("limit");
+                if (rawLimit != null && !rawLimit.isBlank()) {
+                    limit = Integer.parseInt(rawLimit);
+                }
+            } catch (NumberFormatException ignored) {
+                // si no es número, dejamos limit en null
+            }
+            ctx.json(visitContactService.list(user, search, limit));
+        });
+
+        javalin.delete("/api/visit-contacts/{contactId}", ctx -> {
+            long contactId = Long.parseLong(ctx.pathParam("contactId"));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            visitContactService.delete(user, contactId);
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        javalin.post("/api/visit-contacts/{contactId}/register", ctx -> {
+            long contactId = Long.parseLong(ctx.pathParam("contactId"));
+            VisitFromContactRequest request = validateVisitFromContact(ctx.bodyValidator(VisitFromContactRequest.class));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(visitContactService.registerFromContact(user, contactId, request));
         });
 
         javalin.post("/api/visits/{authorizationId}/check-in", ctx -> {
@@ -303,6 +354,16 @@ public final class WebServer {
         return validator
                 .check(req -> req.getVisitorName() != null && !req.getVisitorName().isBlank(), "visitorName es requerido")
                 .get();
+    }
+
+    private VisitContactRequest validateVisitContact(BodyValidator<VisitContactRequest> validator) {
+        return validator
+                .check(req -> req.getVisitorName() != null && !req.getVisitorName().isBlank(), "visitorName es requerido")
+                .get();
+    }
+
+    private VisitFromContactRequest validateVisitFromContact(BodyValidator<VisitFromContactRequest> validator) {
+        return validator.get();
     }
 
     private IncidentRequest validateIncident(BodyValidator<IncidentRequest> validator) {

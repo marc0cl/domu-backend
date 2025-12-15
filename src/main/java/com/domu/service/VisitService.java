@@ -110,6 +110,27 @@ public class VisitService {
         return new VisitListResponse(upcoming, past);
     }
 
+    public List<VisitResponse> getVisitHistory(User user, String search) {
+        List<VisitRepository.VisitSummaryRow> rows;
+        if (isResident(user)) {
+            ensureResidentWithUnit(user);
+            rows = visitRepository.searchAuthorizationsForResident(user.id(), search);
+        } else if (isConcierge(user) || isAdmin(user)) {
+            rows = visitRepository.searchAuthorizationsForResident(user.id(), search);
+        } else {
+            throw new UnauthorizedResponse("No tienes permiso para ver visitas previas");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        List<VisitResponse> history = new ArrayList<>();
+        for (VisitRepository.VisitSummaryRow row : rows) {
+            String status = deriveStatus(row, now);
+            if (!"SCHEDULED".equalsIgnoreCase(status)) {
+                history.add(toResponse(row, status));
+            }
+        }
+        return history;
+    }
+
     public VisitResponse registerCheckIn(Long authorizationId, User user) {
         VisitRepository.VisitSummaryRow existing;
         if (isResident(user)) {
