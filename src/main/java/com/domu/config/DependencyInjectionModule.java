@@ -14,6 +14,7 @@ import com.domu.security.JwtProvider;
 import com.domu.security.PasswordHasher;
 import com.domu.service.BuildingService;
 import com.domu.service.CommonExpenseService;
+import com.domu.service.CommunityRegistrationStorageService;
 import com.domu.service.VisitService;
 import com.domu.service.VisitContactService;
 import com.domu.service.IncidentService;
@@ -52,6 +53,7 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(UserService.class).in(Scopes.SINGLETON);
         bind(CommonExpenseService.class).in(Scopes.SINGLETON);
         bind(BuildingService.class).in(Scopes.SINGLETON);
+        bind(CommunityRegistrationStorageService.class).in(Scopes.SINGLETON);
         bind(VisitService.class).in(Scopes.SINGLETON);
         bind(VisitContactService.class).in(Scopes.SINGLETON);
         bind(IncidentService.class).in(Scopes.SINGLETON);
@@ -86,15 +88,16 @@ public class DependencyInjectionModule extends AbstractModule {
             );
         }
 
-        return new AppConfig(
-            jdbcUrl,
-            dbUser,
-            dbPassword,
-            resolve(properties, "jwt.secret", "JWT_SECRET", DEFAULT_JWT_SECRET),
-            resolve(properties, "jwt.issuer", "JWT_ISSUER", DEFAULT_JWT_ISSUER),
-            parseLong(resolve(properties, "jwt.expirationMinutes", "JWT_EXPIRATION_MINUTES", String.valueOf(DEFAULT_JWT_EXPIRATION_MINUTES)), DEFAULT_JWT_EXPIRATION_MINUTES),
-            parseInteger(resolve(properties, "server.port", "APP_SERVER_PORT", String.valueOf(AppConfig.DEFAULT_PORT)), AppConfig.DEFAULT_PORT)
-        );
+            return new AppConfig(
+                jdbcUrl,
+                dbUser,
+                dbPassword,
+                resolve(properties, "jwt.secret", "JWT_SECRET", DEFAULT_JWT_SECRET),
+                resolve(properties, "jwt.issuer", "JWT_ISSUER", DEFAULT_JWT_ISSUER),
+                parseLong(resolve(properties, "jwt.expirationMinutes", "JWT_EXPIRATION_MINUTES", String.valueOf(DEFAULT_JWT_EXPIRATION_MINUTES)), DEFAULT_JWT_EXPIRATION_MINUTES),
+                parseInteger(resolve(properties, "server.port", "APP_SERVER_PORT", String.valueOf(AppConfig.DEFAULT_PORT)), AppConfig.DEFAULT_PORT),
+                resolve(properties, "box.developerToken", "BOX_TOKEN", "")
+            );
     }
 
     @Provides

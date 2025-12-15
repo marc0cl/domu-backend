@@ -25,8 +25,8 @@ public class BuildingRepository {
     public BuildingRequest insertRequest(BuildingRequest request) {
         String sql = """
                 INSERT INTO building_requests
-                (requested_by_user_id, name, tower_label, address, commune, city, admin_phone, admin_email, admin_name, admin_document, floors, units_count, latitude, longitude, proof_text, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (requested_by_user_id, name, tower_label, address, commune, city, admin_phone, admin_email, admin_name, admin_document, floors, units_count, latitude, longitude, proof_text, box_folder_id, box_file_id, box_file_name, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
@@ -61,7 +61,10 @@ public class BuildingRepository {
                 statement.setNull(14, java.sql.Types.DOUBLE);
             }
             statement.setString(15, request.proofText());
-            statement.setString(16, request.status());
+            statement.setString(16, request.boxFolderId());
+            statement.setString(17, request.boxFileId());
+            statement.setString(18, request.boxFileName());
+            statement.setString(19, request.status());
             statement.executeUpdate();
             try (ResultSet keys = statement.getGeneratedKeys()) {
                 if (keys.next()) {
@@ -78,7 +81,7 @@ public class BuildingRepository {
     public Optional<BuildingRequest> findRequest(Long requestId) {
         String sql = """
                 SELECT id, requested_by_user_id, name, tower_label, address, commune, city, admin_phone, admin_email,
-                       admin_name, admin_document, floors, units_count, latitude, longitude, proof_text, status,
+                       admin_name, admin_document, floors, units_count, latitude, longitude, proof_text, box_folder_id, box_file_id, box_file_name, status,
                        created_at, reviewed_by_user_id, reviewed_at, review_notes, building_id
                 FROM building_requests
                 WHERE id = ?
@@ -94,6 +97,26 @@ public class BuildingRepository {
             return Optional.empty();
         } catch (SQLException e) {
             throw new RepositoryException("Error obteniendo solicitud de edificio", e);
+        }
+    }
+
+    public void updateBoxMetadata(Long requestId, String folderId, String fileId, String fileName) {
+        String sql = """
+                UPDATE building_requests
+                SET box_folder_id = ?,
+                    box_file_id = ?,
+                    box_file_name = ?
+                WHERE id = ?
+                """;
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, folderId);
+            statement.setString(2, fileId);
+            statement.setString(3, fileName);
+            statement.setLong(4, requestId);
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error guardando metadatos de Box", e);
         }
     }
 
@@ -211,6 +234,9 @@ public class BuildingRepository {
         Double latitude = (Double) rs.getObject("latitude");
         Double longitude = (Double) rs.getObject("longitude");
         String proofText = rs.getString("proof_text");
+        String boxFolderId = rs.getString("box_folder_id");
+        String boxFileId = rs.getString("box_file_id");
+        String boxFileName = rs.getString("box_file_name");
         String status = rs.getString("status");
         LocalDateTime createdAt = rs.getTimestamp("created_at").toLocalDateTime();
         Long reviewedBy = (Long) rs.getObject("reviewed_by_user_id");
@@ -236,6 +262,9 @@ public class BuildingRepository {
                 latitude,
                 longitude,
                 proofText,
+                boxFolderId,
+                boxFileId,
+                boxFileName,
                 status,
                 createdAt,
                 reviewedBy,

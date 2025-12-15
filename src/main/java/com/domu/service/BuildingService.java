@@ -5,6 +5,7 @@ import com.domu.domain.BuildingRequest;
 import com.domu.domain.core.User;
 import com.domu.dto.ApproveBuildingRequest;
 import com.domu.dto.BuildingRequestResponse;
+import com.domu.dto.CommunityRegistrationDocument;
 import com.domu.dto.CreateBuildingRequest;
 import com.google.inject.Inject;
 
@@ -15,13 +16,15 @@ import java.time.LocalDateTime;
 public class BuildingService {
 
     private final BuildingRepository repository;
+    private final CommunityRegistrationStorageService storageService;
 
     @Inject
-    public BuildingService(BuildingRepository repository) {
+    public BuildingService(BuildingRepository repository, CommunityRegistrationStorageService storageService) {
         this.repository = repository;
+        this.storageService = storageService;
     }
 
-    public BuildingRequestResponse createRequest(CreateBuildingRequest request, User user) {
+    public BuildingRequestResponse createRequest(CreateBuildingRequest request, User user, CommunityRegistrationDocument document) {
         validateCreate(request);
         if (user == null || user.id() == null) {
             throw new UnauthorizedResponse("Usuario no autenticado");
@@ -43,6 +46,9 @@ public class BuildingService {
                 request.getLatitude(),
                 request.getLongitude(),
                 request.getProofText(),
+                null,
+                null,
+                null,
                 "PENDING",
                 LocalDateTime.now(),
                 null,
@@ -50,7 +56,19 @@ public class BuildingService {
                 null,
                 null
         ));
-        return new BuildingRequestResponse(saved.id(), saved.status(), saved.buildingId(), saved.createdAt(), saved.reviewNotes());
+        var uploadResult = storageService.uploadCommunityDocument(saved.id(), request.getName(), document);
+        repository.updateBoxMetadata(saved.id(), uploadResult.communityFolderId(), uploadResult.fileId(), uploadResult.fileName());
+
+        return new BuildingRequestResponse(
+                saved.id(),
+                saved.status(),
+                saved.buildingId(),
+                saved.createdAt(),
+                saved.reviewNotes(),
+                uploadResult.communityFolderId(),
+                uploadResult.fileId(),
+                uploadResult.fileName()
+        );
     }
 
     public BuildingRequestResponse approve(Long requestId, ApproveBuildingRequest approveRequest, User reviewer) {
@@ -66,7 +84,16 @@ public class BuildingService {
         Long buildingId = repository.insertBuildingFromRequest(request, request.requestedByUserId());
         repository.approveRequest(requestId, reviewer.id(), approveRequest != null ? approveRequest.getReviewNotes() : null, buildingId);
 
-        return new BuildingRequestResponse(requestId, "APPROVED", buildingId, request.createdAt(), approveRequest != null ? approveRequest.getReviewNotes() : null);
+        return new BuildingRequestResponse(
+                requestId,
+                "APPROVED",
+                buildingId,
+                request.createdAt(),
+                approveRequest != null ? approveRequest.getReviewNotes() : null,
+                request.boxFolderId(),
+                request.boxFileId(),
+                request.boxFileName()
+        );
     }
 
     private void validateCreate(CreateBuildingRequest request) {
