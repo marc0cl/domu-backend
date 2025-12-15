@@ -27,7 +27,7 @@ public class CommonExpenseRepository {
         this.dataSource = dataSource;
     }
 
-    public boolean periodExists(Long buildingId, int year, int month) {
+    public boolean periodExists(Long buildingId, Integer year, Integer month) {
         String sql = "SELECT 1 FROM common_expense_periods WHERE building_id = ? AND year = ? AND month = ? LIMIT 1";
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
@@ -135,7 +135,7 @@ public class CommonExpenseRepository {
             }
             statement.executeBatch();
             try (ResultSet keys = statement.getGeneratedKeys()) {
-                int index = 0;
+                Integer index = 0;
                 while (keys.next() && index < charges.size()) {
                     Long id = keys.getLong(1);
                     CommonCharge original = charges.get(index);
@@ -286,8 +286,8 @@ public class CommonExpenseRepository {
         return new CommonExpensePeriod(
                 rs.getLong("id"),
                 rs.getLong("building_id"),
-                rs.getInt("year"),
-                rs.getInt("month"),
+                (Integer) rs.getObject("year"),
+                (Integer) rs.getObject("month"),
                 rs.getDate("generated_at").toLocalDate(),
                 rs.getDate("due_date").toLocalDate(),
                 rs.getBigDecimal("reserve_amount"),
@@ -308,8 +308,8 @@ public class CommonExpenseRepository {
                 rs.getString("payer_type"),
                 rs.getString("receipt_text")
         );
-        int year = rs.getInt("year");
-        int month = rs.getInt("month");
+        Integer year = (Integer) rs.getObject("year");
+        Integer month = (Integer) rs.getObject("month");
         LocalDate dueDate = rs.getDate("due_date").toLocalDate();
         String status = rs.getString("status");
         BigDecimal paid = rs.getBigDecimal("paid");
@@ -321,8 +321,8 @@ public class CommonExpenseRepository {
 
     public record ChargeBalanceRow(
             CommonCharge charge,
-            int year,
-            int month,
+            Integer year,
+            Integer month,
             LocalDate dueDate,
             String periodStatus,
             BigDecimal paidAmount

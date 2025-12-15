@@ -15,8 +15,8 @@ import java.util.List;
 
 public class VisitService {
 
-    private static final int DEFAULT_VALID_MINUTES = 120;
-    private static final int MAX_VALID_MINUTES = 24 * 60;
+    private static final Integer DEFAULT_VALID_MINUTES = 120;
+    private static final Integer MAX_VALID_MINUTES = 24 * 60;
 
     private final VisitRepository visitRepository;
 
@@ -228,7 +228,7 @@ public class VisitService {
             return request.getValidUntil();
         }
         Integer requestedMinutes = request.getValidForMinutes();
-        int minutes = requestedMinutes != null && requestedMinutes > 0
+        Integer minutes = requestedMinutes != null && requestedMinutes > 0
                 ? Math.min(requestedMinutes, MAX_VALID_MINUTES)
                 : DEFAULT_VALID_MINUTES;
         return validFrom.plusMinutes(minutes);

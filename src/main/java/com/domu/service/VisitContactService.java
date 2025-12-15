@@ -15,7 +15,7 @@ import java.util.stream.Collectors;
 
 public class VisitContactService {
 
-    private static final int DEFAULT_LIMIT = 20;
+    private static final Integer DEFAULT_LIMIT = 20;
 
     private final VisitContactRepository visitContactRepository;
     private final VisitService visitService;
@@ -53,7 +53,7 @@ public class VisitContactService {
 
     public List<VisitContactResponse> list(User user, String search, Integer limit) {
         ensureUser(user);
-        int resolvedLimit = (limit != null && limit > 0 && limit <= 50) ? limit : DEFAULT_LIMIT;
+        Integer resolvedLimit = (limit != null && limit > 0 && limit <= 50) ? limit : DEFAULT_LIMIT;
         return visitContactRepository.list(user.id(), search, resolvedLimit)
                 .stream()
                 .map(this::toResponse)

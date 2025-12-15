@@ -14,11 +14,11 @@ public record AppConfig(
         String dbPassword,
         String jwtSecret,
         String jwtIssuer,
-        long jwtExpirationMinutes,
-        int serverPort
+        Long jwtExpirationMinutes,
+        Integer serverPort
 ) {
 
-    public static final int DEFAULT_PORT = 7000;
+    public static final Integer DEFAULT_PORT = 7000;
 
     public static class CustomJsonMapper implements JsonMapper {
         private final ObjectMapper objectMapper;

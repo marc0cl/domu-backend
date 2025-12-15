@@ -72,7 +72,9 @@ public class VisitContactRepository {
         }
     }
 
-    public List<ContactRow> list(Long residentUserId, String search, int limit) {
+    private static final Integer DEFAULT_LIMIT = 20;
+
+    public List<ContactRow> list(Long residentUserId, String search, Integer limit) {
         StringBuilder sql = new StringBuilder("""
                 SELECT id, resident_user_id, visitor_name, visitor_document, unit_id, alias, created_at, updated_at
                 FROM visit_contacts
@@ -88,14 +90,17 @@ public class VisitContactRepository {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql.toString())) {
             statement.setLong(1, residentUserId);
-            int paramIndex = 2;
+            Integer paramIndex = 2;
             if (hasSearch) {
                 String normalizedSearch = search.toLowerCase().trim();
                 String normalizedDoc = normalizedSearch.replace(".", "").replace("-", "").replace(" ", "");
-                statement.setString(paramIndex++, "%" + normalizedSearch + "%");
-                statement.setString(paramIndex++, "%" + normalizedDoc + "%");
+                statement.setString(paramIndex, "%" + normalizedSearch + "%");
+                paramIndex++;
+                statement.setString(paramIndex, "%" + normalizedDoc + "%");
+                paramIndex++;
             }
-            statement.setInt(paramIndex, limit);
+            Integer appliedLimit = (limit != null && limit > 0) ? limit : DEFAULT_LIMIT;
+            statement.setInt(paramIndex, appliedLimit);
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
                     contacts.add(map(rs));

@@ -58,7 +58,7 @@ public final class WebServer {
     private final JwtProvider jwtProvider;
     private final ObjectMapper objectMapper;
     private final Javalin app;
-    private int port = -1;
+    private Integer port = -1;
 
     @Inject
     public WebServer(
@@ -86,7 +86,7 @@ public final class WebServer {
         this.app = createApp();
     }
 
-    public void start(final int port) {
+    public void start(final Integer port) {
         Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
         app.start(port);
         this.port = port;
@@ -169,7 +169,7 @@ public final class WebServer {
         });
 
         javalin.post("/api/finance/periods/{periodId}/charges", ctx -> {
-            long periodId = Long.parseLong(ctx.pathParam("periodId"));
+            Long periodId = Long.parseLong(ctx.pathParam("periodId"));
             AddCommonChargesRequest request = validateAddCharges(ctx.bodyValidator(AddCommonChargesRequest.class));
             ctx.json(commonExpenseService.addCharges(periodId, request));
         });
@@ -180,7 +180,7 @@ public final class WebServer {
         });
 
         javalin.post("/api/finance/charges/{chargeId}/pay", ctx -> {
-            long chargeId = Long.parseLong(ctx.pathParam("chargeId"));
+            Long chargeId = Long.parseLong(ctx.pathParam("chargeId"));
             CommonPaymentRequest request = validatePayment(ctx.bodyValidator(CommonPaymentRequest.class));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.json(commonExpenseService.payCharge(chargeId, user, request));
@@ -195,7 +195,7 @@ public final class WebServer {
         });
 
         javalin.post("/api/buildings/requests/{requestId}/approve", ctx -> {
-            long requestId = Long.parseLong(ctx.pathParam("requestId"));
+            Long requestId = Long.parseLong(ctx.pathParam("requestId"));
             ApproveBuildingRequest request = validateApproveBuilding(ctx.bodyValidator(ApproveBuildingRequest.class));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.json(buildingService.approve(requestId, request, user));
@@ -242,14 +242,14 @@ public final class WebServer {
         });
 
         javalin.delete("/api/visit-contacts/{contactId}", ctx -> {
-            long contactId = Long.parseLong(ctx.pathParam("contactId"));
+            Long contactId = Long.parseLong(ctx.pathParam("contactId"));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             visitContactService.delete(user, contactId);
             ctx.status(HttpStatus.NO_CONTENT);
         });
 
         javalin.post("/api/visit-contacts/{contactId}/register", ctx -> {
-            long contactId = Long.parseLong(ctx.pathParam("contactId"));
+            Long contactId = Long.parseLong(ctx.pathParam("contactId"));
             VisitFromContactRequest request = validateVisitFromContact(ctx.bodyValidator(VisitFromContactRequest.class));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.status(HttpStatus.CREATED);
@@ -257,7 +257,7 @@ public final class WebServer {
         });
 
         javalin.post("/api/visits/{authorizationId}/check-in", ctx -> {
-            long authorizationId = Long.parseLong(ctx.pathParam("authorizationId"));
+            Long authorizationId = Long.parseLong(ctx.pathParam("authorizationId"));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.json(visitService.registerCheckIn(authorizationId, user));
         });
@@ -385,7 +385,7 @@ public final class WebServer {
         }
     }
 
-    public int getPort() {
+    public Integer getPort() {
         return port;
     }
 }

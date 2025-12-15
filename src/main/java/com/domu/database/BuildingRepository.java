@@ -169,7 +169,7 @@ public class BuildingRepository {
                 statement.setNull(4, java.sql.Types.BIGINT);
             }
             statement.setLong(5, requestId);
-            int updated = statement.executeUpdate();
+            Integer updated = statement.executeUpdate();
             if (updated == 0) {
                 throw new RepositoryException("No se pudo aprobar la solicitud (¿ya aprobada o inexistente?)");
             }

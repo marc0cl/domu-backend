@@ -112,7 +112,7 @@ public class VisitRepository {
              PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, status);
             statement.setLong(2, authorizationId);
-            int updated = statement.executeUpdate();
+            Integer updated = statement.executeUpdate();
             if (updated == 0) {
                 throw new RepositoryException("No se encontró la autorización para actualizar su estado");
             }

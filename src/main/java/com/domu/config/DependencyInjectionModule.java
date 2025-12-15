@@ -91,7 +91,7 @@ public class DependencyInjectionModule extends AbstractModule {
             resolve(properties, "jwt.secret", "JWT_SECRET", DEFAULT_JWT_SECRET),
             resolve(properties, "jwt.issuer", "JWT_ISSUER", DEFAULT_JWT_ISSUER),
             parseLong(resolve(properties, "jwt.expirationMinutes", "JWT_EXPIRATION_MINUTES", String.valueOf(DEFAULT_JWT_EXPIRATION_MINUTES)), DEFAULT_JWT_EXPIRATION_MINUTES),
-            (int) parseLong(resolve(properties, "server.port", "APP_SERVER_PORT", String.valueOf(AppConfig.DEFAULT_PORT)), AppConfig.DEFAULT_PORT)
+            parseInteger(resolve(properties, "server.port", "APP_SERVER_PORT", String.valueOf(AppConfig.DEFAULT_PORT)), AppConfig.DEFAULT_PORT)
         );
     }
 
@@ -128,7 +128,7 @@ public class DependencyInjectionModule extends AbstractModule {
     private static final String DEFAULT_DB_PASSWORD = "domu";
     private static final String DEFAULT_JWT_SECRET = "change-this-secret";
     private static final String DEFAULT_JWT_ISSUER = "domu-backend";
-    private static final long DEFAULT_JWT_EXPIRATION_MINUTES = 60L;
+    private static final Long DEFAULT_JWT_EXPIRATION_MINUTES = 60L;
 
     private static Properties loadProperties() {
         Properties properties = new Properties();
@@ -176,12 +176,23 @@ public class DependencyInjectionModule extends AbstractModule {
         return null;
     }
 
-    private static long parseLong(String rawValue, long defaultValue) {
+    private static Long parseLong(String rawValue, Long defaultValue) {
         if (rawValue == null || rawValue.isBlank()) {
             return defaultValue;
         }
         try {
             return Long.parseLong(rawValue);
+        } catch (NumberFormatException ex) {
+            return defaultValue;
+        }
+    }
+
+    private static Integer parseInteger(String rawValue, Integer defaultValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(rawValue);
         } catch (NumberFormatException ex) {
             return defaultValue;
         }
