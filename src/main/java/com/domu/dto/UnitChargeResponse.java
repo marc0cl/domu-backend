@@ -6,8 +6,8 @@ import java.time.LocalDate;
 public record UnitChargeResponse(
         Long chargeId,
         Long periodId,
-        int year,
-        int month,
+        Integer year,
+        Integer month,
         String description,
         BigDecimal amount,
         BigDecimal paid,

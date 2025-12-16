@@ -1,5 +1,6 @@
 package com.domu.web;
 
+import com.domu.domain.BuildingRequest;
 import com.domu.domain.core.User;
 import com.domu.dto.ApproveBuildingRequest;
 import com.domu.dto.AuthResponse;
@@ -13,10 +14,15 @@ import com.domu.dto.AddCommonChargesRequest;
 import com.domu.dto.CommonPaymentRequest;
 import com.domu.dto.CreateCommonExpensePeriodRequest;
 import com.domu.dto.CreateVisitRequest;
+import com.domu.dto.VisitContactRequest;
+import com.domu.dto.VisitFromContactRequest;
+import com.domu.dto.BuildingSummaryResponse;
 import com.domu.dto.IncidentRequest;
+import com.domu.dto.CommunityRegistrationDocument;
 import com.domu.service.BuildingService;
 import com.domu.service.CommonExpenseService;
 import com.domu.service.VisitService;
+import com.domu.service.VisitContactService;
 import com.domu.service.IncidentService;
 import com.domu.security.AuthenticationHandler;
 import com.domu.security.JwtProvider;
@@ -24,6 +30,8 @@ import com.domu.service.InvalidCredentialsException;
 import com.domu.service.UserAlreadyExistsException;
 import com.domu.service.UserService;
 import com.domu.service.ValidationException;
+import com.domu.database.UserBuildingRepository;
+import com.domu.database.BuildingRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.google.inject.Inject;
@@ -32,12 +40,17 @@ import com.google.inject.Singleton;
 import io.javalin.Javalin;
 import io.javalin.http.HttpStatus;
 import io.javalin.json.JavalinJackson;
+import io.javalin.http.UploadedFile;
 import io.javalin.validation.BodyValidator;
+import io.javalin.http.Context;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.zaxxer.hikari.HikariDataSource;
+
+import java.io.IOException;
+import java.io.InputStream;
 
 @Singleton
 public final class WebServer {
@@ -49,12 +62,15 @@ public final class WebServer {
     private final CommonExpenseService commonExpenseService;
     private final BuildingService buildingService;
     private final VisitService visitService;
+    private final VisitContactService visitContactService;
     private final IncidentService incidentService;
     private final AuthenticationHandler authenticationHandler;
     private final JwtProvider jwtProvider;
     private final ObjectMapper objectMapper;
+    private final UserBuildingRepository userBuildingRepository;
+    private final BuildingRepository buildingRepository;
     private final Javalin app;
-    private int port = -1;
+    private Integer port = -1;
 
     @Inject
     public WebServer(
@@ -63,24 +79,30 @@ public final class WebServer {
         final CommonExpenseService commonExpenseService,
         final BuildingService buildingService,
         final VisitService visitService,
+        final VisitContactService visitContactService,
         final IncidentService incidentService,
         final AuthenticationHandler authenticationHandler,
         final JwtProvider jwtProvider,
-        final ObjectMapper objectMapper
+        final ObjectMapper objectMapper,
+        final UserBuildingRepository userBuildingRepository,
+        final BuildingRepository buildingRepository
     ) {
         this.dataSource = dataSource;
         this.userService = userService;
         this.commonExpenseService = commonExpenseService;
         this.buildingService = buildingService;
         this.visitService = visitService;
+        this.visitContactService = visitContactService;
         this.incidentService = incidentService;
         this.authenticationHandler = authenticationHandler;
         this.jwtProvider = jwtProvider;
         this.objectMapper = objectMapper;
+        this.userBuildingRepository = userBuildingRepository;
+        this.buildingRepository = buildingRepository;
         this.app = createApp();
     }
 
-    public void start(final int port) {
+    public void start(final Integer port) {
         Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
         app.start(port);
         this.port = port;
@@ -116,6 +138,106 @@ public final class WebServer {
     }
 
     private void registerRoutes(Javalin javalin) {
+        javalin.get("/aprobar-solicitud", ctx -> {
+            String code = ctx.queryParam("code");
+            try {
+                BuildingRequest request = buildingService.approveByCode(code);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(
+                        true,
+                        "Solicitud aprobada",
+                        "La solicitud de " + escapeHtml(request.name()) + " fue aprobada y notificamos al solicitante."
+                ));
+            } catch (ValidationException e) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(false, "Enlace inválido", e.getMessage()));
+            } catch (Exception e) {
+                LOGGER.error("Error procesando aprobación por código", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(false, "Error inesperado", "Ocurrió un problema al procesar el enlace. Intenta nuevamente."));
+            }
+        });
+
+        javalin.get("/rechazar-solicitud", ctx -> {
+            String code = ctx.queryParam("code");
+            try {
+                BuildingRequest request = buildingService.validateApprovalLink(code);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderRejectionForm(code, request.name()));
+            } catch (ValidationException e) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(false, "Enlace inválido", e.getMessage()));
+            } catch (Exception e) {
+                LOGGER.error("Error mostrando formulario de rechazo por código", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(false, "Error inesperado", "Ocurrió un problema al procesar el enlace. Intenta nuevamente."));
+            }
+        });
+
+        javalin.post("/rechazar-solicitud", ctx -> {
+            String code = ctx.formParam("code");
+            String reason = ctx.formParam("reason");
+            try {
+                BuildingRequest request = buildingService.rejectByCode(code, reason);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(
+                        true,
+                        "Solicitud rechazada",
+                        "Registramos el rechazo para " + escapeHtml(request.name()) + " y el solicitante fue notificado."
+                ));
+            } catch (ValidationException e) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(false, "No pudimos rechazar", e.getMessage()));
+            } catch (Exception e) {
+                LOGGER.error("Error procesando rechazo por código", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(false, "Error inesperado", "Ocurrió un problema al registrar el rechazo. Intenta nuevamente."));
+            }
+        });
+
+        javalin.get("/registrar-admin", ctx -> {
+            String code = ctx.queryParam("code");
+            try {
+                BuildingRequest request = buildingService.validateAdminInvite(code);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderAdminInviteForm(code, request.adminEmail(), request.name()));
+            } catch (ValidationException e) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderAdminInviteResult(false, "Enlace inválido", e.getMessage()));
+            } catch (Exception e) {
+                LOGGER.error("Error mostrando formulario de registro de admin", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderAdminInviteResult(false, "Error inesperado", "Ocurrió un problema al procesar el enlace. Intenta nuevamente."));
+            }
+        });
+
+        javalin.post("/registrar-admin", ctx -> {
+            String code = ctx.formParam("code");
+            String password = ctx.formParam("password");
+            try {
+                buildingService.registerAdminFromInvite(code, password);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderAdminInviteResult(true, "Cuenta creada", "Ya puedes iniciar sesión con tu correo y la contraseña que definiste."));
+            } catch (ValidationException e) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderAdminInviteResult(false, "No pudimos crear tu cuenta", e.getMessage()));
+            } catch (Exception e) {
+                LOGGER.error("Error registrando administrador desde invitación", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderAdminInviteResult(false, "Error inesperado", "Ocurrió un problema al crear tu cuenta. Intenta nuevamente."));
+            }
+        });
+
         javalin.post("/api/auth/register", ctx -> {
             RegistrationRequest request = validateRegistration(ctx.bodyValidator(RegistrationRequest.class));
             User created = userService.registerUser(
@@ -131,26 +253,40 @@ public final class WebServer {
                     request.getPassword()
             );
             ctx.status(HttpStatus.CREATED);
-            ctx.json(UserMapper.toResponse(created));
+            var buildings = loadBuildings(created);
+            Long activeBuildingId = resolveActiveBuildingId(created, buildings);
+            ctx.json(UserMapper.toResponse(created, buildings, activeBuildingId));
         });
 
         javalin.post("/api/auth/login", ctx -> {
             LoginRequest request = validateLogin(ctx.bodyValidator(LoginRequest.class));
             User user = userService.authenticate(request.getEmail(), request.getPassword());
             String token = jwtProvider.generateToken(user);
-            ctx.json(new AuthResponse(token, UserMapper.toResponse(user)));
+            var buildings = loadBuildings(user);
+            Long activeBuildingId = resolveActiveBuildingId(user, buildings);
+            ctx.json(new AuthResponse(token, UserMapper.toResponse(user, buildings, activeBuildingId)));
         });
 
         javalin.before("/api/users/*", authenticationHandler);
         javalin.before("/api/finance/*", authenticationHandler);
-        javalin.before("/api/buildings/*", authenticationHandler);
+        javalin.before("/api/buildings/*", ctx -> {
+            if ("/api/buildings/requests".equals(ctx.path())) {
+                return;
+            }
+            authenticationHandler.handle(ctx);
+        });
         javalin.before("/api/visits", authenticationHandler);
         javalin.before("/api/visits/*", authenticationHandler);
+        javalin.before("/api/visit-contacts", authenticationHandler);
+        javalin.before("/api/visit-contacts/*", authenticationHandler);
         javalin.before("/api/incidents", authenticationHandler);
         javalin.before("/api/incidents/*", authenticationHandler);
 
         javalin.get("/api/users/me", ctx -> {
-            UserResponse response = UserMapper.toResponseFromContext(ctx);
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            var buildings = loadBuildings(user);
+            Long activeBuildingId = resolveActiveBuildingId(user, buildings);
+            UserResponse response = UserMapper.toResponseFromContext(ctx, buildings, activeBuildingId);
             ctx.json(response);
         });
 
@@ -161,7 +297,7 @@ public final class WebServer {
         });
 
         javalin.post("/api/finance/periods/{periodId}/charges", ctx -> {
-            long periodId = Long.parseLong(ctx.pathParam("periodId"));
+            Long periodId = Long.parseLong(ctx.pathParam("periodId"));
             AddCommonChargesRequest request = validateAddCharges(ctx.bodyValidator(AddCommonChargesRequest.class));
             ctx.json(commonExpenseService.addCharges(periodId, request));
         });
@@ -172,22 +308,23 @@ public final class WebServer {
         });
 
         javalin.post("/api/finance/charges/{chargeId}/pay", ctx -> {
-            long chargeId = Long.parseLong(ctx.pathParam("chargeId"));
+            Long chargeId = Long.parseLong(ctx.pathParam("chargeId"));
             CommonPaymentRequest request = validatePayment(ctx.bodyValidator(CommonPaymentRequest.class));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.json(commonExpenseService.payCharge(chargeId, user, request));
         });
 
         javalin.post("/api/buildings/requests", ctx -> {
-            CreateBuildingRequest request = validateCreateBuilding(ctx.bodyValidator(CreateBuildingRequest.class));
+            CreateBuildingRequest request = parseCreateBuilding(ctx);
+            CommunityRegistrationDocument document = extractRegistrationDocument(ctx);
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.status(HttpStatus.CREATED);
-            BuildingRequestResponse response = buildingService.createRequest(request, user);
+            BuildingRequestResponse response = buildingService.createRequest(request, user, document);
             ctx.json(response);
         });
 
         javalin.post("/api/buildings/requests/{requestId}/approve", ctx -> {
-            long requestId = Long.parseLong(ctx.pathParam("requestId"));
+            Long requestId = Long.parseLong(ctx.pathParam("requestId"));
             ApproveBuildingRequest request = validateApproveBuilding(ctx.bodyValidator(ApproveBuildingRequest.class));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.json(buildingService.approve(requestId, request, user));
@@ -205,8 +342,51 @@ public final class WebServer {
             ctx.json(visitService.getVisitsForUser(user));
         });
 
+        javalin.get("/api/visits/history", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            String search = ctx.queryParam("q");
+            ctx.json(visitService.getVisitHistory(user, search));
+        });
+
+        javalin.post("/api/visit-contacts", ctx -> {
+            VisitContactRequest request = validateVisitContact(ctx.bodyValidator(VisitContactRequest.class));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(visitContactService.create(user, request));
+        });
+
+        javalin.get("/api/visit-contacts", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            String search = ctx.queryParam("q");
+            Integer limit = null;
+            try {
+                String rawLimit = ctx.queryParam("limit");
+                if (rawLimit != null && !rawLimit.isBlank()) {
+                    limit = Integer.parseInt(rawLimit);
+                }
+            } catch (NumberFormatException ignored) {
+                // si no es número, dejamos limit en null
+            }
+            ctx.json(visitContactService.list(user, search, limit));
+        });
+
+        javalin.delete("/api/visit-contacts/{contactId}", ctx -> {
+            Long contactId = Long.parseLong(ctx.pathParam("contactId"));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            visitContactService.delete(user, contactId);
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        javalin.post("/api/visit-contacts/{contactId}/register", ctx -> {
+            Long contactId = Long.parseLong(ctx.pathParam("contactId"));
+            VisitFromContactRequest request = validateVisitFromContact(ctx.bodyValidator(VisitFromContactRequest.class));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(visitContactService.registerFromContact(user, contactId, request));
+        });
+
         javalin.post("/api/visits/{authorizationId}/check-in", ctx -> {
-            long authorizationId = Long.parseLong(ctx.pathParam("authorizationId"));
+            Long authorizationId = Long.parseLong(ctx.pathParam("authorizationId"));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.json(visitService.registerCheckIn(authorizationId, user));
         });
@@ -224,6 +404,166 @@ public final class WebServer {
             ctx.status(HttpStatus.CREATED);
             ctx.json(incidentService.create(user, request));
         });
+    }
+
+    private String renderApprovalResultPage(boolean success, String title, String message) {
+        String color = success ? "#1f8f5f" : "#c0392b";
+        String border = success ? "rgba(31,143,95,0.18)" : "rgba(192,57,43,0.18)";
+        String badge = success ? "Listo" : "No completado";
+        String safeTitle = escapeHtml(title);
+        String safeMessage = escapeHtml(message);
+        return String.format("""
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>%s</title>
+  <style>
+    body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
+    .card { max-width:520px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid %s; }
+    .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:%s; }
+    h1 { margin:16px 0 8px 0; font-size:22px; }
+    p { margin:0; line-height:1.6; color:#4b5563; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">%s</span>
+    <h1>%s</h1>
+    <p>%s</p>
+  </div>
+</body>
+</html>
+""", safeTitle, border, color, badge, safeTitle, safeMessage);
+    }
+
+    private String renderRejectionForm(String code, String communityName) {
+        String safeName = escapeHtml(communityName);
+        String safeCode = escapeHtml(code);
+        return String.format("""
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rechazar solicitud</title>
+  <style>
+    body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
+    .card { max-width:580px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid rgba(241,107,50,0.18); }
+    .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:#f16b32; }
+    h1 { margin:16px 0 8px 0; font-size:22px; }
+    p { margin:0 0 14px 0; line-height:1.6; color:#4b5563; }
+    label { display:block; font-weight:600; margin-bottom:6px; color:#111827; }
+    textarea { width:100%; min-height:130px; border:1px solid #e5e7eb; border-radius:10px; padding:12px; font-family:inherit; font-size:14px; resize:vertical; }
+    textarea:focus { outline:2px solid rgba(241,107,50,0.2); border-color:#f16b32; }
+    button { margin-top:14px; background:#f16b32; color:#ffffff; border:none; border-radius:12px; padding:12px 18px; font-weight:700; cursor:pointer; width:100%; font-size:15px; }
+    button:hover { background:#dd5c28; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">Rechazar solicitud</span>
+    <h1>Ingresa el motivo</h1>
+    <p>Solicitud: %s</p>
+    <form method="post" action="/rechazar-solicitud">
+      <input type="hidden" name="code" value="%s">
+      <label for="reason">Motivo de rechazo</label>
+      <textarea id="reason" name="reason" maxlength="800" required placeholder="Explica por qué se rechaza el documento..."></textarea>
+      <button type="submit">Enviar rechazo</button>
+    </form>
+  </div>
+</body>
+</html>
+""", safeName, safeCode);
+    }
+
+    private String renderAdminInviteForm(String code, String email, String communityName) {
+        String safeEmail = escapeHtml(email);
+        String safeCode = escapeHtml(code);
+        String safeCommunity = escapeHtml(communityName);
+        return String.format("""
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crear tu cuenta</title>
+  <style>
+    body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
+    .card { max-width:520px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid rgba(83,164,151,0.18); }
+    .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:#53a497; }
+    h1 { margin:16px 0 8px 0; font-size:22px; }
+    p { margin:0 0 14px 0; line-height:1.6; color:#4b5563; }
+    label { display:block; font-weight:600; margin-bottom:6px; color:#111827; }
+    input[type="password"] { width:100%; border:1px solid #e5e7eb; border-radius:10px; padding:12px; font-family:inherit; font-size:14px; }
+    input[type="password"]:focus { outline:2px solid rgba(83,164,151,0.2); border-color:#53a497; }
+    button { margin-top:14px; background:#53a497; color:#ffffff; border:none; border-radius:12px; padding:12px 18px; font-weight:700; cursor:pointer; width:100%; font-size:15px; }
+    button:hover { background:#3f897f; }
+    .readonly { padding:10px 12px; border-radius:10px; border:1px solid #e5e7eb; background:#f9fafb; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">Crear usuario administrador</span>
+    <h1>Para la comunidad %s</h1>
+    <p>Confirma tu correo y define una contraseña para acceder al panel.</p>
+    <form method="post" action="/registrar-admin">
+      <input type="hidden" name="code" value="%s">
+      <label>Correo</label>
+      <div class="readonly">%s</div>
+      <label for="password">Contraseña (mínimo 10 caracteres)</label>
+      <input id="password" name="password" type="password" minlength="10" required autocomplete="new-password" placeholder="••••••••••">
+      <button type="submit">Crear mi cuenta</button>
+    </form>
+  </div>
+</body>
+</html>
+""", safeCommunity, safeCode, safeEmail);
+    }
+
+    private String renderAdminInviteResult(boolean success, String title, String message) {
+        String color = success ? "#1f8f5f" : "#c0392b";
+        String border = success ? "rgba(31,143,95,0.18)" : "rgba(192,57,43,0.18)";
+        String badge = success ? "Listo" : "No completado";
+        String safeTitle = escapeHtml(title);
+        String safeMessage = escapeHtml(message);
+        return String.format("""
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>%s</title>
+  <style>
+    body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
+    .card { max-width:520px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid %s; }
+    .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:%s; }
+    h1 { margin:16px 0 8px 0; font-size:22px; }
+    p { margin:0; line-height:1.6; color:#4b5563; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">%s</span>
+    <h1>%s</h1>
+    <p>%s</p>
+  </div>
+</body>
+</html>
+""", safeTitle, border, color, badge, safeTitle, safeMessage);
+    }
+
+    private String escapeHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 
     private void registerExceptionHandlers(Javalin javalin) {
@@ -255,6 +595,7 @@ public final class WebServer {
                 .check(req -> req.getResident() != null, "resident is required")
                 .check(req -> req.getEmail() != null && !req.getEmail().isBlank(), "email is required")
                 .check(req -> req.getPassword() != null && req.getPassword().length() >= 10, "password must contain at least 10 characters")
+                .check(req -> !(req.getRoleId() != null && req.getRoleId() == 1L && req.getUnitId() == null), "admin requiere unidad/edificio asignado")
                 .get();
     }
 
@@ -287,12 +628,51 @@ public final class WebServer {
                 .get();
     }
 
-    private CreateBuildingRequest validateCreateBuilding(BodyValidator<CreateBuildingRequest> validator) {
-        return validator
-                .check(req -> req.getName() != null && !req.getName().isBlank(), "name es requerido")
-                .check(req -> req.getAddress() != null && !req.getAddress().isBlank(), "address es requerido")
-                .check(req -> req.getProofText() != null && !req.getProofText().isBlank(), "proofText es requerido")
-                .get();
+    private CreateBuildingRequest parseCreateBuilding(Context ctx) {
+        if (ctx.contentType() != null && ctx.contentType().toLowerCase().contains("multipart/form-data")) {
+            CreateBuildingRequest request = new CreateBuildingRequest();
+            request.setName(ctx.formParam("name"));
+            request.setTowerLabel(ctx.formParam("towerLabel"));
+            request.setAddress(ctx.formParam("address"));
+            request.setCommune(ctx.formParam("commune"));
+            request.setCity(ctx.formParam("city"));
+            request.setAdminPhone(ctx.formParam("adminPhone"));
+            request.setAdminEmail(ctx.formParam("adminEmail"));
+            request.setAdminName(ctx.formParam("adminName"));
+            request.setAdminDocument(ctx.formParam("adminDocument"));
+            request.setFloors(parseInteger(ctx.formParam("floors"), "floors"));
+            request.setUnitsCount(parseInteger(ctx.formParam("unitsCount"), "unitsCount"));
+            request.setLatitude(parseDouble(ctx.formParam("latitude"), "latitude"));
+            request.setLongitude(parseDouble(ctx.formParam("longitude"), "longitude"));
+            request.setProofText(ctx.formParam("proofText"));
+            return validateCreateBuilding(request);
+        }
+        return validateCreateBuilding(ctx.bodyValidator(CreateBuildingRequest.class).get());
+    }
+
+    private CreateBuildingRequest validateCreateBuilding(CreateBuildingRequest request) {
+        if (request == null) {
+            throw new ValidationException("El cuerpo es obligatorio");
+        }
+        if (request.getName() == null || request.getName().isBlank()) {
+            throw new ValidationException("name es requerido");
+        }
+        if (request.getAddress() == null || request.getAddress().isBlank()) {
+            throw new ValidationException("address es requerido");
+        }
+        if (request.getCommune() == null || request.getCommune().isBlank()) {
+            throw new ValidationException("commune es requerido");
+        }
+        if (request.getProofText() == null || request.getProofText().isBlank()) {
+            throw new ValidationException("proofText es requerido");
+        }
+        if (request.getLatitude() != null && (request.getLatitude() < -90 || request.getLatitude() > 90)) {
+            throw new ValidationException("latitude debe estar entre -90 y 90");
+        }
+        if (request.getLongitude() != null && (request.getLongitude() < -180 || request.getLongitude() > 180)) {
+            throw new ValidationException("longitude debe estar entre -180 y 180");
+        }
+        return request;
     }
 
     private ApproveBuildingRequest validateApproveBuilding(BodyValidator<ApproveBuildingRequest> validator) {
@@ -305,12 +685,84 @@ public final class WebServer {
                 .get();
     }
 
+    private VisitContactRequest validateVisitContact(BodyValidator<VisitContactRequest> validator) {
+        return validator
+                .check(req -> req.getVisitorName() != null && !req.getVisitorName().isBlank(), "visitorName es requerido")
+                .get();
+    }
+
+    private VisitFromContactRequest validateVisitFromContact(BodyValidator<VisitFromContactRequest> validator) {
+        return validator.get();
+    }
+
+    private java.util.List<BuildingSummaryResponse> loadBuildings(User user) {
+        if (user == null) {
+            return java.util.List.of();
+        }
+        return userBuildingRepository.findBuildingsForUser(user.id());
+    }
+
+    private Long resolveActiveBuildingId(User user, java.util.List<BuildingSummaryResponse> buildings) {
+        if (user != null && user.unitId() != null) {
+            Long buildingId = buildingRepository.findBuildingIdByUnitId(user.unitId());
+            if (buildingId != null) {
+                return buildingId;
+            }
+        }
+        if (buildings != null && !buildings.isEmpty()) {
+            return buildings.get(0).id();
+        }
+        return null;
+    }
+
     private IncidentRequest validateIncident(BodyValidator<IncidentRequest> validator) {
         return validator
                 .check(req -> req.getTitle() != null && !req.getTitle().isBlank(), "title es requerido")
                 .check(req -> req.getDescription() != null && !req.getDescription().isBlank(), "description es requerido")
                 .check(req -> req.getCategory() != null && !req.getCategory().isBlank(), "category es requerido")
                 .get();
+    }
+
+    private CommunityRegistrationDocument extractRegistrationDocument(Context ctx) {
+        UploadedFile uploaded = ctx.uploadedFile("document");
+        if (uploaded == null) {
+            throw new ValidationException("document es requerido");
+        }
+        try (InputStream content = uploaded.content()) {
+            byte[] bytes = content.readAllBytes();
+            if (bytes.length == 0) {
+                throw new ValidationException("El archivo de registro está vacío");
+            }
+            return new CommunityRegistrationDocument(
+                    uploaded.filename() != null ? uploaded.filename() : "registro.pdf",
+                    uploaded.contentType(),
+                    bytes
+            );
+        } catch (IOException e) {
+            throw new ValidationException("No se pudo leer el archivo de registro: " + e.getMessage());
+        }
+    }
+
+    private Integer parseInteger(String raw, String fieldName) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException e) {
+            throw new ValidationException(fieldName + " debe ser numérico");
+        }
+    }
+
+    private Double parseDouble(String raw, String fieldName) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(raw);
+        } catch (NumberFormatException e) {
+            throw new ValidationException(fieldName + " debe ser numérico");
+        }
     }
 
     private java.time.LocalDate parseDate(String raw) {
@@ -324,7 +776,7 @@ public final class WebServer {
         }
     }
 
-    public int getPort() {
+    public Integer getPort() {
         return port;
     }
 }

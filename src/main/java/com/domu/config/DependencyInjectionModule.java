@@ -4,16 +4,19 @@ import com.domu.database.BuildingRepository;
 import com.domu.database.CommonExpenseRepository;
 import com.domu.database.DataSourceFactory;
 import com.domu.database.UserRepository;
+import com.domu.database.UserBuildingRepository;
 import com.domu.database.VisitRepository;
+import com.domu.database.VisitContactRepository;
 import com.domu.database.IncidentRepository;
-import com.domu.database.VisitRepository;
 import com.domu.security.AuthenticationHandler;
 import com.domu.security.BCryptPasswordHasher;
 import com.domu.security.JwtProvider;
 import com.domu.security.PasswordHasher;
 import com.domu.service.BuildingService;
 import com.domu.service.CommonExpenseService;
+import com.domu.service.CommunityRegistrationStorageService;
 import com.domu.service.VisitService;
+import com.domu.service.VisitContactService;
 import com.domu.service.IncidentService;
 import com.domu.service.UserService;
 import com.domu.web.WebServer;
@@ -50,12 +53,16 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(UserService.class).in(Scopes.SINGLETON);
         bind(CommonExpenseService.class).in(Scopes.SINGLETON);
         bind(BuildingService.class).in(Scopes.SINGLETON);
+        bind(CommunityRegistrationStorageService.class).in(Scopes.SINGLETON);
         bind(VisitService.class).in(Scopes.SINGLETON);
+        bind(VisitContactService.class).in(Scopes.SINGLETON);
         bind(IncidentService.class).in(Scopes.SINGLETON);
         bind(UserRepository.class).in(Scopes.SINGLETON);
         bind(CommonExpenseRepository.class).in(Scopes.SINGLETON);
         bind(BuildingRepository.class).in(Scopes.SINGLETON);
+        bind(UserBuildingRepository.class).in(Scopes.SINGLETON);
         bind(VisitRepository.class).in(Scopes.SINGLETON);
+        bind(VisitContactRepository.class).in(Scopes.SINGLETON);
         bind(IncidentRepository.class).in(Scopes.SINGLETON);
         bind(AuthenticationHandler.class).in(Scopes.SINGLETON);
         bind(PasswordHasher.class).to(BCryptPasswordHasher.class).in(Scopes.SINGLETON);
@@ -81,15 +88,24 @@ public class DependencyInjectionModule extends AbstractModule {
             );
         }
 
-        return new AppConfig(
-            jdbcUrl,
-            dbUser,
-            dbPassword,
-            resolve(properties, "jwt.secret", "JWT_SECRET", DEFAULT_JWT_SECRET),
-            resolve(properties, "jwt.issuer", "JWT_ISSUER", DEFAULT_JWT_ISSUER),
-            parseLong(resolve(properties, "jwt.expirationMinutes", "JWT_EXPIRATION_MINUTES", String.valueOf(DEFAULT_JWT_EXPIRATION_MINUTES)), DEFAULT_JWT_EXPIRATION_MINUTES),
-            (int) parseLong(resolve(properties, "server.port", "APP_SERVER_PORT", String.valueOf(AppConfig.DEFAULT_PORT)), AppConfig.DEFAULT_PORT)
-        );
+            return new AppConfig(
+                jdbcUrl,
+                dbUser,
+                dbPassword,
+                resolve(properties, "jwt.secret", "JWT_SECRET", DEFAULT_JWT_SECRET),
+                resolve(properties, "jwt.issuer", "JWT_ISSUER", DEFAULT_JWT_ISSUER),
+                parseLong(resolve(properties, "jwt.expirationMinutes", "JWT_EXPIRATION_MINUTES", String.valueOf(DEFAULT_JWT_EXPIRATION_MINUTES)), DEFAULT_JWT_EXPIRATION_MINUTES),
+                parseInteger(resolve(properties, "server.port", "APP_SERVER_PORT", String.valueOf(AppConfig.DEFAULT_PORT)), AppConfig.DEFAULT_PORT),
+                resolve(properties, "box.developerToken", "BOX_TOKEN", ""),
+                resolve(properties, "box.rootFolderId", "BOX_ROOT_FOLDER_ID", "0"),
+                resolve(properties, "mail.host", "MAIL_HOST", ""),
+                parseInteger(resolve(properties, "mail.port", "MAIL_PORT", "587"), 587),
+                resolve(properties, "mail.user", "MAIL_USER", ""),
+                resolve(properties, "mail.password", "MAIL_PASSWORD", ""),
+                resolve(properties, "mail.from", "MAIL_FROM", "no-reply@domu.app"),
+                resolve(properties, "approval.baseUrl", "APPROVAL_BASE_URL", "https://domu.app"),
+                resolve(properties, "approval.recipient", "APPROVALS_RECIPIENT", "")
+            );
     }
 
     @Provides
@@ -118,6 +134,12 @@ public class DependencyInjectionModule extends AbstractModule {
         return new JwtProvider(config.jwtSecret(), config.jwtIssuer(), config.jwtExpirationMinutes());
     }
 
+    @Provides
+    @Singleton
+    com.domu.email.EmailService emailService(final AppConfig config) {
+        return new com.domu.email.SmtpEmailService(config);
+    }
+
     private static final String DEFAULT_DB_HOST = "localhost";
     private static final String DEFAULT_DB_PORT = "3306";
     private static final String DEFAULT_DB_NAME = "domu";
@@ -125,7 +147,7 @@ public class DependencyInjectionModule extends AbstractModule {
     private static final String DEFAULT_DB_PASSWORD = "domu";
     private static final String DEFAULT_JWT_SECRET = "change-this-secret";
     private static final String DEFAULT_JWT_ISSUER = "domu-backend";
-    private static final long DEFAULT_JWT_EXPIRATION_MINUTES = 60L;
+    private static final Long DEFAULT_JWT_EXPIRATION_MINUTES = 60L;
 
     private static Properties loadProperties() {
         Properties properties = new Properties();
@@ -173,12 +195,23 @@ public class DependencyInjectionModule extends AbstractModule {
         return null;
     }
 
-    private static long parseLong(String rawValue, long defaultValue) {
+    private static Long parseLong(String rawValue, Long defaultValue) {
         if (rawValue == null || rawValue.isBlank()) {
             return defaultValue;
         }
         try {
             return Long.parseLong(rawValue);
+        } catch (NumberFormatException ex) {
+            return defaultValue;
+        }
+    }
+
+    private static Integer parseInteger(String rawValue, Integer defaultValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(rawValue);
         } catch (NumberFormatException ex) {
             return defaultValue;
         }

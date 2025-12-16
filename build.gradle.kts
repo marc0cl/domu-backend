@@ -33,6 +33,7 @@ dependencies {
     implementation(libs.jakartaValidation)
     implementation(libs.jakartaPersistence)
     implementation(libs.guice)
+    implementation(libs.boxSdk)
 
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)

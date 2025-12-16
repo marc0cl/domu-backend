@@ -14,11 +14,20 @@ public record AppConfig(
         String dbPassword,
         String jwtSecret,
         String jwtIssuer,
-        long jwtExpirationMinutes,
-        int serverPort
+        Long jwtExpirationMinutes,
+        Integer serverPort,
+        String boxDeveloperToken,
+        String boxRootFolderId,
+        String mailHost,
+        Integer mailPort,
+        String mailUser,
+        String mailPassword,
+        String mailFrom,
+        String approvalBaseUrl,
+        String approvalsRecipient
 ) {
 
-    public static final int DEFAULT_PORT = 7000;
+    public static final Integer DEFAULT_PORT = 7000;
 
     public static class CustomJsonMapper implements JsonMapper {
         private final ObjectMapper objectMapper;

@@ -20,15 +20,24 @@ public record BuildingRequest(
         Double latitude,
         Double longitude,
         String proofText,
+        String boxFolderId,
+        String boxFileId,
+        String boxFileName,
         String status,
         LocalDateTime createdAt,
         Long reviewedByUserId,
         LocalDateTime reviewedAt,
         String reviewNotes,
-        Long buildingId
+        Long buildingId,
+        String approvalCode,
+        LocalDateTime approvalCodeExpiresAt,
+        LocalDateTime approvalCodeUsedAt,
+        String approvalAction,
+        String adminInviteCode,
+        LocalDateTime adminInviteExpiresAt,
+        LocalDateTime adminInviteUsedAt
 ) {
     public BuildingRequest {
-        Objects.requireNonNull(requestedByUserId, "requestedByUserId");
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(address, "address");
     }
@@ -51,12 +60,22 @@ public record BuildingRequest(
                 latitude,
                 longitude,
                 proofText,
+                boxFolderId,
+                boxFileId,
+                boxFileName,
                 status,
                 createdAt,
                 reviewedByUserId,
                 reviewedAt,
                 reviewNotes,
-                buildingId
+                buildingId,
+                approvalCode,
+                approvalCodeExpiresAt,
+                approvalCodeUsedAt,
+                approvalAction,
+                adminInviteCode,
+                adminInviteExpiresAt,
+                adminInviteUsedAt
         );
     }
 }

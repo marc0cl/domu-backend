@@ -6,13 +6,13 @@ import java.time.LocalDate;
 public record CommonExpensePeriodResponse(
         Long periodId,
         Long buildingId,
-        int year,
-        int month,
+        Integer year,
+        Integer month,
         LocalDate dueDate,
         BigDecimal reserveAmount,
         BigDecimal totalAmount,
         String status,
-        int chargesCreated
+        Integer chargesCreated
 ) {
 }
 

@@ -240,11 +240,11 @@ public class CommonExpenseService {
         }
 
         BigDecimal remaining = amount;
-        for (int i = 0; i < units.size(); i++) {
+        for (Integer i = 0; i < units.size(); i++) {
             CommonExpenseRepository.UnitShare unit = units.get(i);
             BigDecimal weight = unit.weight() != null && unit.weight().compareTo(BigDecimal.ZERO) > 0 ? unit.weight() : BigDecimal.ONE;
             BigDecimal share = amount.multiply(weight).divide(totalWeight, 2, RoundingMode.HALF_UP);
-            if (i == units.size() - 1) {
+            if (i.equals(units.size() - 1)) {
                 share = remaining;
             }
             remaining = remaining.subtract(share);

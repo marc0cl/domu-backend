@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solicitud de comunidad - Aprobación</title>
+    <!--[if mso]>
+    <style type="text/css">
+        table {border-collapse: collapse; border-spacing: 0; margin: 0;}
+        div, td {padding: 0;}
+    </style>
+    <![endif]-->
+</head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background-color:#f6f8fb;">
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#f6f8fb;">
+    <tr>
+        <td style="padding:24px 16px;">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width:640px;margin:0 auto;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+
+                <!-- Barra de color -->
+                <tr>
+                    <td style="height:5px;background-color:#f7ce0f;"></td>
+                </tr>
+
+                <!-- Header -->
+                <tr>
+                    <td style="padding:22px 24px 18px 24px;">
+                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                            <tr>
+                                <td style="vertical-align:middle;">
+                                    <div style="font-weight:700;color:#000000;font-size:15px;line-height:1.3;margin:0 0 3px 0;">DOMU</div>
+                                    <div style="color:#808282;font-size:12px;line-height:1.3;margin:0;">Sistema de Gestión de Comunidades</div>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+
+                <!-- Título -->
+                <tr>
+                    <td style="padding:24px 24px 20px 24px;background-color:#f9fafb;border-top:1px solid #e5e7eb;">
+                        <h1 style="margin:0 0 6px 0;font-size:22px;font-weight:700;color:#000000;line-height:1.3;">📋 Solicitud de Comunidad</h1>
+                        <p style="margin:0;color:#67696a;font-size:13px;line-height:1.4;">Revisa la información y aprueba o rechaza el registro.</p>
+                    </td>
+                </tr>
+
+                <!-- Contenido -->
+                <tr>
+                    <td style="padding:24px;">
+
+                        <!-- Campo: Comunidad -->
+                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid #f0f1f3;">
+                            <tr>
+                                <td>
+                                    <div style="color:#808282;font-size:11px;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 5px 0;font-weight:500;">COMUNIDAD</div>
+                                    <div style="font-weight:600;color:#000000;font-size:15px;line-height:1.4;margin:0;">{{communityName}}</div>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <!-- Campo: Administrador -->
+                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid #f0f1f3;">
+                            <tr>
+                                <td>
+                                    <div style="color:#808282;font-size:11px;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 5px 0;font-weight:500;">ADMINISTRADOR SOLICITANTE</div>
+                                    <div style="font-weight:600;color:#000000;font-size:15px;line-height:1.4;margin:0;">{{adminName}}</div>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <!-- Campo: Contacto -->
+                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid #f0f1f3;">
+                            <tr>
+                                <td>
+                                    <div style="color:#808282;font-size:11px;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 5px 0;font-weight:500;">CONTACTO</div>
+                                    <div style="font-weight:600;color:#000000;font-size:15px;line-height:1.4;margin:0;">
+                                        <a href="mailto:{{adminEmail}}" style="color:#53a497;text-decoration:none;">{{adminEmail}}</a>
+                                    </div>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <!-- Campo: Dirección -->
+                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom:24px;">
+                            <tr>
+                                <td>
+                                    <div style="color:#808282;font-size:11px;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 5px 0;font-weight:500;">DIRECCIÓN APROXIMADA</div>
+                                    <div style="font-weight:600;color:#000000;font-size:15px;line-height:1.4;margin:0;">{{address}}</div>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <!-- Botones -->
+                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:28px 0 24px 0;">
+                            <tr>
+                                <td width="48%" style="padding-right:2%;">
+                                    <a href="{{approveUrl}}" style="display:block;padding:15px 20px;border-radius:12px;text-decoration:none;font-weight:700;font-size:14px;text-align:center;background-color:#53a497;color:#ffffff;border:2px solid #53a497;">✓ Aprobar Solicitud</a>
+                                </td>
+                                <td width="48%" style="padding-left:2%;">
+                                    <a href="{{rejectUrl}}" style="display:block;padding:15px 20px;border-radius:12px;text-decoration:none;font-weight:700;font-size:14px;text-align:center;background-color:#ffffff;color:#f16b32;border:2px solid #f16b32;">✕ Rechazar</a>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <!-- Info box -->
+                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#fffbf5;border:1px solid rgba(241,107,50,0.25);border-left:4px solid #f16b32;border-radius:12px;padding:16px 18px;">
+                            <tr>
+                                <td style="color:#67696a;font-size:12px;line-height:1.7;">
+                                    <strong style="color:#000000;font-weight:700;">Código de aprobación:</strong> {{approvalCode}}<br>
+                                    <strong style="color:#000000;font-weight:700;">Vigencia:</strong> 7 días desde la emisión<br>
+                                    Si no solicitaste este correo o no reconoces esta comunidad, por favor ignóralo.
+                                </td>
+                            </tr>
+                        </table>
+
+                    </td>
+                </tr>
+
+                <!-- Footer -->
+                <tr>
+                    <td style="padding:20px 24px;color:#808282;font-size:11px;line-height:1.6;text-align:center;background-color:#fafbfc;border-top:1px solid #e5e7eb;">
+                        <strong style="color:#67696a;">DOMU</strong> · Este correo se generó automáticamente. No respondas a este mensaje.
+                    </td>
+                </tr>
+
+            </table>
+        </td>
+    </tr>
+</table>
+</body>
+</html>

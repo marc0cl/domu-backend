@@ -15,8 +15,8 @@ import java.util.List;
 
 public class VisitService {
 
-    private static final int DEFAULT_VALID_MINUTES = 120;
-    private static final int MAX_VALID_MINUTES = 24 * 60;
+    private static final Integer DEFAULT_VALID_MINUTES = 120;
+    private static final Integer MAX_VALID_MINUTES = 24 * 60;
 
     private final VisitRepository visitRepository;
 
@@ -110,6 +110,26 @@ public class VisitService {
         return new VisitListResponse(upcoming, past);
     }
 
+    public List<VisitResponse> getVisitHistory(User user, String search) {
+        List<VisitRepository.VisitSummaryRow> rows;
+        if (isResident(user)) {
+            ensureResidentWithUnit(user);
+            rows = visitRepository.searchAuthorizationsForResident(user.id(), search);
+        } else if (isConcierge(user) || isAdmin(user)) {
+            rows = visitRepository.searchAuthorizationsForResident(user.id(), search);
+        } else {
+            throw new UnauthorizedResponse("No tienes permiso para ver visitas previas");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        List<VisitResponse> history = new ArrayList<>();
+        for (VisitRepository.VisitSummaryRow row : rows) {
+            String status = deriveStatus(row, now);
+            if (!"SCHEDULED".equalsIgnoreCase(status)) {
+                history.add(toResponse(row, status));
+            }
+        }
+        return history;
+    }
     public VisitResponse registerCheckIn(Long authorizationId, User user) {
         VisitRepository.VisitSummaryRow existing;
         if (isResident(user)) {
@@ -207,7 +227,7 @@ public class VisitService {
             return request.getValidUntil();
         }
         Integer requestedMinutes = request.getValidForMinutes();
-        int minutes = requestedMinutes != null && requestedMinutes > 0
+        Integer minutes = requestedMinutes != null && requestedMinutes > 0
                 ? Math.min(requestedMinutes, MAX_VALID_MINUTES)
                 : DEFAULT_VALID_MINUTES;
         return validFrom.plusMinutes(minutes);
