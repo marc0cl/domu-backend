@@ -28,10 +28,16 @@ public record BuildingRequest(
         Long reviewedByUserId,
         LocalDateTime reviewedAt,
         String reviewNotes,
-        Long buildingId
+        Long buildingId,
+        String approvalCode,
+        LocalDateTime approvalCodeExpiresAt,
+        LocalDateTime approvalCodeUsedAt,
+        String approvalAction,
+        String adminInviteCode,
+        LocalDateTime adminInviteExpiresAt,
+        LocalDateTime adminInviteUsedAt
 ) {
     public BuildingRequest {
-        Objects.requireNonNull(requestedByUserId, "requestedByUserId");
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(address, "address");
     }
@@ -62,7 +68,14 @@ public record BuildingRequest(
                 reviewedByUserId,
                 reviewedAt,
                 reviewNotes,
-                buildingId
+                buildingId,
+                approvalCode,
+                approvalCodeExpiresAt,
+                approvalCodeUsedAt,
+                approvalAction,
+                adminInviteCode,
+                adminInviteExpiresAt,
+                adminInviteUsedAt
         );
     }
 }

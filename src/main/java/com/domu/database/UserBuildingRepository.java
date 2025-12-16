@@ -48,5 +48,20 @@ public class UserBuildingRepository {
             throw new RepositoryException("Error obteniendo edificios del usuario", e);
         }
     }
+
+    public void addUserToBuilding(Long userId, Long buildingId) {
+        String sql = """
+                INSERT IGNORE INTO user_buildings (user_id, building_id)
+                VALUES (?, ?)
+                """;
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, userId);
+            statement.setLong(2, buildingId);
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error vinculando usuario a edificio", e);
+        }
+    }
 }
 

@@ -1,8 +1,8 @@
 package com.domu.dto;
 
 public record BoxUploadResult(
-        String communityFolderId,
-        String registrationFolderId,
+        String requestFolderId,
+        String statusFolderId,
         String fileId,
         String fileName
 ) {

@@ -96,7 +96,15 @@ public class DependencyInjectionModule extends AbstractModule {
                 resolve(properties, "jwt.issuer", "JWT_ISSUER", DEFAULT_JWT_ISSUER),
                 parseLong(resolve(properties, "jwt.expirationMinutes", "JWT_EXPIRATION_MINUTES", String.valueOf(DEFAULT_JWT_EXPIRATION_MINUTES)), DEFAULT_JWT_EXPIRATION_MINUTES),
                 parseInteger(resolve(properties, "server.port", "APP_SERVER_PORT", String.valueOf(AppConfig.DEFAULT_PORT)), AppConfig.DEFAULT_PORT),
-                resolve(properties, "box.developerToken", "BOX_TOKEN", "")
+                resolve(properties, "box.developerToken", "BOX_TOKEN", ""),
+                resolve(properties, "box.rootFolderId", "BOX_ROOT_FOLDER_ID", "0"),
+                resolve(properties, "mail.host", "MAIL_HOST", ""),
+                parseInteger(resolve(properties, "mail.port", "MAIL_PORT", "587"), 587),
+                resolve(properties, "mail.user", "MAIL_USER", ""),
+                resolve(properties, "mail.password", "MAIL_PASSWORD", ""),
+                resolve(properties, "mail.from", "MAIL_FROM", "no-reply@domu.app"),
+                resolve(properties, "approval.baseUrl", "APPROVAL_BASE_URL", "https://domu.app"),
+                resolve(properties, "approval.recipient", "APPROVALS_RECIPIENT", "")
             );
     }
 
@@ -124,6 +132,12 @@ public class DependencyInjectionModule extends AbstractModule {
     @Singleton
     JwtProvider jwtProvider(final AppConfig config) {
         return new JwtProvider(config.jwtSecret(), config.jwtIssuer(), config.jwtExpirationMinutes());
+    }
+
+    @Provides
+    @Singleton
+    com.domu.email.EmailService emailService(final AppConfig config) {
+        return new com.domu.email.SmtpEmailService(config);
     }
 
     private static final String DEFAULT_DB_HOST = "localhost";
