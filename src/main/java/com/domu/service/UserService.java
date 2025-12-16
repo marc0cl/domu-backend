@@ -1,6 +1,7 @@
 package com.domu.service;
 
 import com.domu.database.UserRepository;
+import com.domu.database.UserBuildingRepository;
 import com.domu.domain.core.User;
 import com.domu.security.PasswordHasher;
 import com.google.inject.Inject;
@@ -13,13 +14,16 @@ import java.util.regex.Pattern;
 public class UserService {
 
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$", Pattern.CASE_INSENSITIVE);
+    private static final Long ADMIN_ROLE_ID = 1L;
 
     private final UserRepository userRepository;
+    private final UserBuildingRepository userBuildingRepository;
     private final PasswordHasher passwordHasher;
 
     @Inject
-    public UserService(UserRepository userRepository, PasswordHasher passwordHasher) {
+    public UserService(UserRepository userRepository, UserBuildingRepository userBuildingRepository, PasswordHasher passwordHasher) {
         this.userRepository = userRepository;
+        this.userBuildingRepository = userBuildingRepository;
         this.passwordHasher = passwordHasher;
     }
 
@@ -36,6 +40,9 @@ public class UserService {
         String rawPassword
     ) {
         validateRegistration(firstName, lastName, email, phone, documentNumber, resident, rawPassword);
+        if (roleId != null && ADMIN_ROLE_ID.equals(roleId) && unitId == null) {
+            throw new ValidationException("Los administradores deben estar asociados a un edificio/unidad");
+        }
         String normalizedEmail = email.toLowerCase();
         userRepository.findByEmail(normalizedEmail).ifPresent(existing -> {
             throw new UserAlreadyExistsException(normalizedEmail);
@@ -58,6 +65,36 @@ public class UserService {
             "ACTIVE"
         );
         return userRepository.save(user);
+    }
+
+    public User createAdminForBuilding(String email, String phone, String documentNumber, String firstName, String lastName, String rawPassword, Long buildingId) {
+        if (buildingId == null) {
+            throw new ValidationException("buildingId es requerido para crear administrador");
+        }
+        validateRegistration(firstName, lastName, email, phone, documentNumber, false, rawPassword);
+        String normalizedEmail = email.toLowerCase();
+        userRepository.findByEmail(normalizedEmail).ifPresent(existing -> {
+            throw new ValidationException("Ya existe un usuario con este correo");
+        });
+        String passwordHash = passwordHasher.hash(rawPassword);
+        User user = new User(
+            null,
+            null,
+            ADMIN_ROLE_ID,
+            firstName.trim(),
+            lastName.trim(),
+            normalizedEmail,
+            phone,
+            null,
+            passwordHash,
+            documentNumber,
+            false,
+            LocalDateTime.now(),
+            "ACTIVE"
+        );
+        User saved = userRepository.save(user);
+        userBuildingRepository.addUserToBuilding(saved.id(), buildingId);
+        return saved;
     }
 
     public User authenticate(String email, String rawPassword) {

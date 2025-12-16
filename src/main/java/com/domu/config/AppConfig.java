@@ -16,7 +16,15 @@ public record AppConfig(
         String jwtIssuer,
         Long jwtExpirationMinutes,
         Integer serverPort,
-        String boxDeveloperToken
+        String boxDeveloperToken,
+        String boxRootFolderId,
+        String mailHost,
+        Integer mailPort,
+        String mailUser,
+        String mailPassword,
+        String mailFrom,
+        String approvalBaseUrl,
+        String approvalsRecipient
 ) {
 
     public static final Integer DEFAULT_PORT = 7000;

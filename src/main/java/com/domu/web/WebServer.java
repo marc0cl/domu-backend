@@ -1,5 +1,6 @@
 package com.domu.web;
 
+import com.domu.domain.BuildingRequest;
 import com.domu.domain.core.User;
 import com.domu.dto.ApproveBuildingRequest;
 import com.domu.dto.AuthResponse;
@@ -137,6 +138,106 @@ public final class WebServer {
     }
 
     private void registerRoutes(Javalin javalin) {
+        javalin.get("/aprobar-solicitud", ctx -> {
+            String code = ctx.queryParam("code");
+            try {
+                BuildingRequest request = buildingService.approveByCode(code);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(
+                        true,
+                        "Solicitud aprobada",
+                        "La solicitud de " + escapeHtml(request.name()) + " fue aprobada y notificamos al solicitante."
+                ));
+            } catch (ValidationException e) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(false, "Enlace inválido", e.getMessage()));
+            } catch (Exception e) {
+                LOGGER.error("Error procesando aprobación por código", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(false, "Error inesperado", "Ocurrió un problema al procesar el enlace. Intenta nuevamente."));
+            }
+        });
+
+        javalin.get("/rechazar-solicitud", ctx -> {
+            String code = ctx.queryParam("code");
+            try {
+                BuildingRequest request = buildingService.validateApprovalLink(code);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderRejectionForm(code, request.name()));
+            } catch (ValidationException e) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(false, "Enlace inválido", e.getMessage()));
+            } catch (Exception e) {
+                LOGGER.error("Error mostrando formulario de rechazo por código", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(false, "Error inesperado", "Ocurrió un problema al procesar el enlace. Intenta nuevamente."));
+            }
+        });
+
+        javalin.post("/rechazar-solicitud", ctx -> {
+            String code = ctx.formParam("code");
+            String reason = ctx.formParam("reason");
+            try {
+                BuildingRequest request = buildingService.rejectByCode(code, reason);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(
+                        true,
+                        "Solicitud rechazada",
+                        "Registramos el rechazo para " + escapeHtml(request.name()) + " y el solicitante fue notificado."
+                ));
+            } catch (ValidationException e) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(false, "No pudimos rechazar", e.getMessage()));
+            } catch (Exception e) {
+                LOGGER.error("Error procesando rechazo por código", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderApprovalResultPage(false, "Error inesperado", "Ocurrió un problema al registrar el rechazo. Intenta nuevamente."));
+            }
+        });
+
+        javalin.get("/registrar-admin", ctx -> {
+            String code = ctx.queryParam("code");
+            try {
+                BuildingRequest request = buildingService.validateAdminInvite(code);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderAdminInviteForm(code, request.adminEmail(), request.name()));
+            } catch (ValidationException e) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderAdminInviteResult(false, "Enlace inválido", e.getMessage()));
+            } catch (Exception e) {
+                LOGGER.error("Error mostrando formulario de registro de admin", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderAdminInviteResult(false, "Error inesperado", "Ocurrió un problema al procesar el enlace. Intenta nuevamente."));
+            }
+        });
+
+        javalin.post("/registrar-admin", ctx -> {
+            String code = ctx.formParam("code");
+            String password = ctx.formParam("password");
+            try {
+                buildingService.registerAdminFromInvite(code, password);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderAdminInviteResult(true, "Cuenta creada", "Ya puedes iniciar sesión con tu correo y la contraseña que definiste."));
+            } catch (ValidationException e) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderAdminInviteResult(false, "No pudimos crear tu cuenta", e.getMessage()));
+            } catch (Exception e) {
+                LOGGER.error("Error registrando administrador desde invitación", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.contentType("text/html; charset=UTF-8");
+                ctx.result(renderAdminInviteResult(false, "Error inesperado", "Ocurrió un problema al crear tu cuenta. Intenta nuevamente."));
+            }
+        });
+
         javalin.post("/api/auth/register", ctx -> {
             RegistrationRequest request = validateRegistration(ctx.bodyValidator(RegistrationRequest.class));
             User created = userService.registerUser(
@@ -168,7 +269,12 @@ public final class WebServer {
 
         javalin.before("/api/users/*", authenticationHandler);
         javalin.before("/api/finance/*", authenticationHandler);
-        javalin.before("/api/buildings/*", authenticationHandler);
+        javalin.before("/api/buildings/*", ctx -> {
+            if ("/api/buildings/requests".equals(ctx.path())) {
+                return;
+            }
+            authenticationHandler.handle(ctx);
+        });
         javalin.before("/api/visits", authenticationHandler);
         javalin.before("/api/visits/*", authenticationHandler);
         javalin.before("/api/visit-contacts", authenticationHandler);
@@ -300,6 +406,166 @@ public final class WebServer {
         });
     }
 
+    private String renderApprovalResultPage(boolean success, String title, String message) {
+        String color = success ? "#1f8f5f" : "#c0392b";
+        String border = success ? "rgba(31,143,95,0.18)" : "rgba(192,57,43,0.18)";
+        String badge = success ? "Listo" : "No completado";
+        String safeTitle = escapeHtml(title);
+        String safeMessage = escapeHtml(message);
+        return String.format("""
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>%s</title>
+  <style>
+    body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
+    .card { max-width:520px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid %s; }
+    .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:%s; }
+    h1 { margin:16px 0 8px 0; font-size:22px; }
+    p { margin:0; line-height:1.6; color:#4b5563; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">%s</span>
+    <h1>%s</h1>
+    <p>%s</p>
+  </div>
+</body>
+</html>
+""", safeTitle, border, color, badge, safeTitle, safeMessage);
+    }
+
+    private String renderRejectionForm(String code, String communityName) {
+        String safeName = escapeHtml(communityName);
+        String safeCode = escapeHtml(code);
+        return String.format("""
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rechazar solicitud</title>
+  <style>
+    body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
+    .card { max-width:580px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid rgba(241,107,50,0.18); }
+    .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:#f16b32; }
+    h1 { margin:16px 0 8px 0; font-size:22px; }
+    p { margin:0 0 14px 0; line-height:1.6; color:#4b5563; }
+    label { display:block; font-weight:600; margin-bottom:6px; color:#111827; }
+    textarea { width:100%; min-height:130px; border:1px solid #e5e7eb; border-radius:10px; padding:12px; font-family:inherit; font-size:14px; resize:vertical; }
+    textarea:focus { outline:2px solid rgba(241,107,50,0.2); border-color:#f16b32; }
+    button { margin-top:14px; background:#f16b32; color:#ffffff; border:none; border-radius:12px; padding:12px 18px; font-weight:700; cursor:pointer; width:100%; font-size:15px; }
+    button:hover { background:#dd5c28; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">Rechazar solicitud</span>
+    <h1>Ingresa el motivo</h1>
+    <p>Solicitud: %s</p>
+    <form method="post" action="/rechazar-solicitud">
+      <input type="hidden" name="code" value="%s">
+      <label for="reason">Motivo de rechazo</label>
+      <textarea id="reason" name="reason" maxlength="800" required placeholder="Explica por qué se rechaza el documento..."></textarea>
+      <button type="submit">Enviar rechazo</button>
+    </form>
+  </div>
+</body>
+</html>
+""", safeName, safeCode);
+    }
+
+    private String renderAdminInviteForm(String code, String email, String communityName) {
+        String safeEmail = escapeHtml(email);
+        String safeCode = escapeHtml(code);
+        String safeCommunity = escapeHtml(communityName);
+        return String.format("""
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crear tu cuenta</title>
+  <style>
+    body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
+    .card { max-width:520px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid rgba(83,164,151,0.18); }
+    .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:#53a497; }
+    h1 { margin:16px 0 8px 0; font-size:22px; }
+    p { margin:0 0 14px 0; line-height:1.6; color:#4b5563; }
+    label { display:block; font-weight:600; margin-bottom:6px; color:#111827; }
+    input[type="password"] { width:100%; border:1px solid #e5e7eb; border-radius:10px; padding:12px; font-family:inherit; font-size:14px; }
+    input[type="password"]:focus { outline:2px solid rgba(83,164,151,0.2); border-color:#53a497; }
+    button { margin-top:14px; background:#53a497; color:#ffffff; border:none; border-radius:12px; padding:12px 18px; font-weight:700; cursor:pointer; width:100%; font-size:15px; }
+    button:hover { background:#3f897f; }
+    .readonly { padding:10px 12px; border-radius:10px; border:1px solid #e5e7eb; background:#f9fafb; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">Crear usuario administrador</span>
+    <h1>Para la comunidad %s</h1>
+    <p>Confirma tu correo y define una contraseña para acceder al panel.</p>
+    <form method="post" action="/registrar-admin">
+      <input type="hidden" name="code" value="%s">
+      <label>Correo</label>
+      <div class="readonly">%s</div>
+      <label for="password">Contraseña (mínimo 10 caracteres)</label>
+      <input id="password" name="password" type="password" minlength="10" required autocomplete="new-password" placeholder="••••••••••">
+      <button type="submit">Crear mi cuenta</button>
+    </form>
+  </div>
+</body>
+</html>
+""", safeCommunity, safeCode, safeEmail);
+    }
+
+    private String renderAdminInviteResult(boolean success, String title, String message) {
+        String color = success ? "#1f8f5f" : "#c0392b";
+        String border = success ? "rgba(31,143,95,0.18)" : "rgba(192,57,43,0.18)";
+        String badge = success ? "Listo" : "No completado";
+        String safeTitle = escapeHtml(title);
+        String safeMessage = escapeHtml(message);
+        return String.format("""
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>%s</title>
+  <style>
+    body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
+    .card { max-width:520px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid %s; }
+    .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:%s; }
+    h1 { margin:16px 0 8px 0; font-size:22px; }
+    p { margin:0; line-height:1.6; color:#4b5563; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">%s</span>
+    <h1>%s</h1>
+    <p>%s</p>
+  </div>
+</body>
+</html>
+""", safeTitle, border, color, badge, safeTitle, safeMessage);
+    }
+
+    private String escapeHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
+    }
+
     private void registerExceptionHandlers(Javalin javalin) {
         javalin.exception(UserAlreadyExistsException.class, (exception, ctx) -> {
             ctx.status(HttpStatus.CONFLICT);
@@ -329,6 +595,7 @@ public final class WebServer {
                 .check(req -> req.getResident() != null, "resident is required")
                 .check(req -> req.getEmail() != null && !req.getEmail().isBlank(), "email is required")
                 .check(req -> req.getPassword() != null && req.getPassword().length() >= 10, "password must contain at least 10 characters")
+                .check(req -> !(req.getRoleId() != null && req.getRoleId() == 1L && req.getUnitId() == null), "admin requiere unidad/edificio asignado")
                 .get();
     }
 
@@ -392,6 +659,9 @@ public final class WebServer {
         }
         if (request.getAddress() == null || request.getAddress().isBlank()) {
             throw new ValidationException("address es requerido");
+        }
+        if (request.getCommune() == null || request.getCommune().isBlank()) {
+            throw new ValidationException("commune es requerido");
         }
         if (request.getProofText() == null || request.getProofText().isBlank()) {
             throw new ValidationException("proofText es requerido");
