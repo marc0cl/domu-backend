@@ -114,6 +114,40 @@ public class UserService {
         return userRepository.findByEmail(email.toLowerCase());
     }
 
+    public User updateProfile(User user, String firstName, String lastName, String phone, String documentNumber) {
+        if (user == null || user.id() == null) {
+            throw new ValidationException("Usuario inválido");
+        }
+        if (isBlank(firstName) || isBlank(lastName)) {
+            throw new ValidationException("Debes ingresar nombre y apellido");
+        }
+        if (isBlank(phone)) {
+            throw new ValidationException("Debes ingresar un teléfono de contacto");
+        }
+        if (isBlank(documentNumber)) {
+            throw new ValidationException("Debes ingresar un documento de identidad");
+        }
+        return userRepository.updateProfile(user.id(), firstName.trim(), lastName.trim(), phone.trim(),
+                documentNumber.trim());
+    }
+
+    public void changePassword(User user, String oldPassword, String newPassword) {
+        if (user == null || user.id() == null) {
+            throw new ValidationException("Usuario inválido");
+        }
+        if (isBlank(newPassword) || newPassword.length() < 10) {
+            throw new ValidationException("La contraseña debe tener al menos 10 caracteres");
+        }
+        if (isBlank(oldPassword)) {
+            throw new ValidationException("Debes ingresar la contraseña actual");
+        }
+        if (!passwordHasher.matches(oldPassword, user.passwordHash())) {
+            throw new ValidationException("La contraseña actual no es correcta");
+        }
+        String hash = passwordHasher.hash(newPassword);
+        userRepository.updatePassword(user.id(), hash);
+    }
+
     /**
      * Crea un admin si no existe; si ya existe como admin, solo lo asocia al
      * edificio.
