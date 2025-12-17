@@ -3,6 +3,8 @@ package com.domu.web;
 import com.domu.domain.BuildingRequest;
 import com.domu.domain.core.User;
 import com.domu.dto.ApproveBuildingRequest;
+import com.domu.dto.AdminInviteInfoResponse;
+import com.domu.dto.AdminInviteRegistrationRequest;
 import com.domu.dto.AuthResponse;
 import com.domu.dto.BuildingRequestResponse;
 import com.domu.dto.CreateBuildingRequest;
@@ -74,19 +76,18 @@ public final class WebServer {
 
     @Inject
     public WebServer(
-        final HikariDataSource dataSource,
-        final UserService userService,
-        final CommonExpenseService commonExpenseService,
-        final BuildingService buildingService,
-        final VisitService visitService,
-        final VisitContactService visitContactService,
-        final IncidentService incidentService,
-        final AuthenticationHandler authenticationHandler,
-        final JwtProvider jwtProvider,
-        final ObjectMapper objectMapper,
-        final UserBuildingRepository userBuildingRepository,
-        final BuildingRepository buildingRepository
-    ) {
+            final HikariDataSource dataSource,
+            final UserService userService,
+            final CommonExpenseService commonExpenseService,
+            final BuildingService buildingService,
+            final VisitService visitService,
+            final VisitContactService visitContactService,
+            final IncidentService incidentService,
+            final AuthenticationHandler authenticationHandler,
+            final JwtProvider jwtProvider,
+            final ObjectMapper objectMapper,
+            final UserBuildingRepository userBuildingRepository,
+            final BuildingRepository buildingRepository) {
         this.dataSource = dataSource;
         this.userService = userService;
         this.commonExpenseService = commonExpenseService;
@@ -146,8 +147,8 @@ public final class WebServer {
                 ctx.result(renderApprovalResultPage(
                         true,
                         "Solicitud aprobada",
-                        "La solicitud de " + escapeHtml(request.name()) + " fue aprobada y notificamos al solicitante."
-                ));
+                        "La solicitud de " + escapeHtml(request.name())
+                                + " fue aprobada y notificamos al solicitante."));
             } catch (ValidationException e) {
                 ctx.status(HttpStatus.BAD_REQUEST);
                 ctx.contentType("text/html; charset=UTF-8");
@@ -156,7 +157,8 @@ public final class WebServer {
                 LOGGER.error("Error procesando aprobación por código", e);
                 ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
                 ctx.contentType("text/html; charset=UTF-8");
-                ctx.result(renderApprovalResultPage(false, "Error inesperado", "Ocurrió un problema al procesar el enlace. Intenta nuevamente."));
+                ctx.result(renderApprovalResultPage(false, "Error inesperado",
+                        "Ocurrió un problema al procesar el enlace. Intenta nuevamente."));
             }
         });
 
@@ -174,7 +176,8 @@ public final class WebServer {
                 LOGGER.error("Error mostrando formulario de rechazo por código", e);
                 ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
                 ctx.contentType("text/html; charset=UTF-8");
-                ctx.result(renderApprovalResultPage(false, "Error inesperado", "Ocurrió un problema al procesar el enlace. Intenta nuevamente."));
+                ctx.result(renderApprovalResultPage(false, "Error inesperado",
+                        "Ocurrió un problema al procesar el enlace. Intenta nuevamente."));
             }
         });
 
@@ -187,8 +190,8 @@ public final class WebServer {
                 ctx.result(renderApprovalResultPage(
                         true,
                         "Solicitud rechazada",
-                        "Registramos el rechazo para " + escapeHtml(request.name()) + " y el solicitante fue notificado."
-                ));
+                        "Registramos el rechazo para " + escapeHtml(request.name())
+                                + " y el solicitante fue notificado."));
             } catch (ValidationException e) {
                 ctx.status(HttpStatus.BAD_REQUEST);
                 ctx.contentType("text/html; charset=UTF-8");
@@ -197,16 +200,17 @@ public final class WebServer {
                 LOGGER.error("Error procesando rechazo por código", e);
                 ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
                 ctx.contentType("text/html; charset=UTF-8");
-                ctx.result(renderApprovalResultPage(false, "Error inesperado", "Ocurrió un problema al registrar el rechazo. Intenta nuevamente."));
+                ctx.result(renderApprovalResultPage(false, "Error inesperado",
+                        "Ocurrió un problema al registrar el rechazo. Intenta nuevamente."));
             }
         });
 
         javalin.get("/registrar-admin", ctx -> {
             String code = ctx.queryParam("code");
             try {
-                BuildingRequest request = buildingService.validateAdminInvite(code);
+                AdminInviteInfoResponse invite = buildingService.getAdminInviteInfo(code);
                 ctx.contentType("text/html; charset=UTF-8");
-                ctx.result(renderAdminInviteForm(code, request.adminEmail(), request.name()));
+                ctx.result(renderAdminInviteForm(code, invite));
             } catch (ValidationException e) {
                 ctx.status(HttpStatus.BAD_REQUEST);
                 ctx.contentType("text/html; charset=UTF-8");
@@ -215,17 +219,23 @@ public final class WebServer {
                 LOGGER.error("Error mostrando formulario de registro de admin", e);
                 ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
                 ctx.contentType("text/html; charset=UTF-8");
-                ctx.result(renderAdminInviteResult(false, "Error inesperado", "Ocurrió un problema al procesar el enlace. Intenta nuevamente."));
+                ctx.result(renderAdminInviteResult(false, "Error inesperado",
+                        "Ocurrió un problema al procesar el enlace. Intenta nuevamente."));
             }
         });
 
         javalin.post("/registrar-admin", ctx -> {
             String code = ctx.formParam("code");
+            String firstName = ctx.formParam("firstName");
+            String lastName = ctx.formParam("lastName");
+            String phone = ctx.formParam("phone");
+            String documentNumber = ctx.formParam("documentNumber");
             String password = ctx.formParam("password");
             try {
-                buildingService.registerAdminFromInvite(code, password);
+                buildingService.registerAdminFromInvite(code, firstName, lastName, phone, documentNumber, password);
                 ctx.contentType("text/html; charset=UTF-8");
-                ctx.result(renderAdminInviteResult(true, "Cuenta creada", "Ya puedes iniciar sesión con tu correo y la contraseña que definiste."));
+                ctx.result(renderAdminInviteResult(true, "Cuenta creada",
+                        "Ya puedes iniciar sesión con tu correo y la contraseña que definiste."));
             } catch (ValidationException e) {
                 ctx.status(HttpStatus.BAD_REQUEST);
                 ctx.contentType("text/html; charset=UTF-8");
@@ -234,7 +244,53 @@ public final class WebServer {
                 LOGGER.error("Error registrando administrador desde invitación", e);
                 ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
                 ctx.contentType("text/html; charset=UTF-8");
-                ctx.result(renderAdminInviteResult(false, "Error inesperado", "Ocurrió un problema al crear tu cuenta. Intenta nuevamente."));
+                ctx.result(renderAdminInviteResult(false, "Error inesperado",
+                        "Ocurrió un problema al crear tu cuenta. Intenta nuevamente."));
+            }
+        });
+
+        javalin.get("/api/admin-invites/{code}", ctx -> {
+            String code = ctx.pathParam("code");
+            try {
+                AdminInviteInfoResponse invite = buildingService.getAdminInviteInfo(code);
+                ctx.json(invite);
+            } catch (ValidationException e) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of(e.getMessage(), HttpStatus.BAD_REQUEST.getCode()));
+            } catch (Exception e) {
+                LOGGER.error("Error obteniendo datos de invitación de admin", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.json(ErrorResponse.of("Ocurrió un problema al procesar el enlace. Intenta nuevamente.",
+                        HttpStatus.INTERNAL_SERVER_ERROR.getCode()));
+            }
+        });
+
+        javalin.post("/api/admin-invites/{code}", ctx -> {
+            String code = ctx.pathParam("code");
+            AdminInviteRegistrationRequest request = ctx.bodyValidator(AdminInviteRegistrationRequest.class)
+                    .check(body -> body.getPassword() != null && body.getPassword().length() >= 10,
+                            "La contraseña debe tener al menos 10 caracteres")
+                    .get();
+            try {
+                buildingService.registerAdminFromInvite(
+                        code,
+                        request.getFirstName(),
+                        request.getLastName(),
+                        request.getPhone(),
+                        request.getDocumentNumber(),
+                        request.getPassword());
+                ctx.status(HttpStatus.CREATED);
+                ctx.json(java.util.Map.of(
+                        "message",
+                        "Cuenta creada. Ya puedes iniciar sesión con tu correo y la contraseña que definiste."));
+            } catch (ValidationException e) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of(e.getMessage(), HttpStatus.BAD_REQUEST.getCode()));
+            } catch (Exception e) {
+                LOGGER.error("Error registrando administrador desde invitación (API)", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.json(ErrorResponse.of("Ocurrió un problema al crear tu cuenta. Intenta nuevamente.",
+                        HttpStatus.INTERNAL_SERVER_ERROR.getCode()));
             }
         });
 
@@ -250,8 +306,7 @@ public final class WebServer {
                     request.getPhone(),
                     request.getDocumentNumber(),
                     request.getResident(),
-                    request.getPassword()
-            );
+                    request.getPassword());
             ctx.status(HttpStatus.CREATED);
             var buildings = loadBuildings(created);
             Long activeBuildingId = resolveActiveBuildingId(created, buildings);
@@ -291,7 +346,8 @@ public final class WebServer {
         });
 
         javalin.post("/api/finance/periods", ctx -> {
-            CreateCommonExpensePeriodRequest request = validateCreatePeriod(ctx.bodyValidator(CreateCommonExpensePeriodRequest.class));
+            CreateCommonExpensePeriodRequest request = validateCreatePeriod(
+                    ctx.bodyValidator(CreateCommonExpensePeriodRequest.class));
             ctx.status(HttpStatus.CREATED);
             ctx.json(commonExpenseService.createPeriod(request));
         });
@@ -379,7 +435,8 @@ public final class WebServer {
 
         javalin.post("/api/visit-contacts/{contactId}/register", ctx -> {
             Long contactId = Long.parseLong(ctx.pathParam("contactId"));
-            VisitFromContactRequest request = validateVisitFromContact(ctx.bodyValidator(VisitFromContactRequest.class));
+            VisitFromContactRequest request = validateVisitFromContact(
+                    ctx.bodyValidator(VisitFromContactRequest.class));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.status(HttpStatus.CREATED);
             ctx.json(visitContactService.registerFromContact(user, contactId, request));
@@ -412,114 +469,149 @@ public final class WebServer {
         String badge = success ? "Listo" : "No completado";
         String safeTitle = escapeHtml(title);
         String safeMessage = escapeHtml(message);
-        return String.format("""
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>%s</title>
-  <style>
-    body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
-    .card { max-width:520px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid %s; }
-    .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:%s; }
-    h1 { margin:16px 0 8px 0; font-size:22px; }
-    p { margin:0; line-height:1.6; color:#4b5563; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <span class="badge">%s</span>
-    <h1>%s</h1>
-    <p>%s</p>
-  </div>
-</body>
-</html>
-""", safeTitle, border, color, badge, safeTitle, safeMessage);
+        return String.format(
+                """
+                        <!DOCTYPE html>
+                        <html lang="es">
+                        <head>
+                          <meta charset="UTF-8">
+                          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                          <title>%s</title>
+                          <style>
+                            body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
+                            .card { max-width:520px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid %s; }
+                            .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:%s; }
+                            h1 { margin:16px 0 8px 0; font-size:22px; }
+                            p { margin:0; line-height:1.6; color:#4b5563; }
+                          </style>
+                        </head>
+                        <body>
+                          <div class="card">
+                            <span class="badge">%s</span>
+                            <h1>%s</h1>
+                            <p>%s</p>
+                          </div>
+                        </body>
+                        </html>
+                        """,
+                safeTitle, border, color, badge, safeTitle, safeMessage);
     }
 
     private String renderRejectionForm(String code, String communityName) {
         String safeName = escapeHtml(communityName);
         String safeCode = escapeHtml(code);
-        return String.format("""
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Rechazar solicitud</title>
-  <style>
-    body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
-    .card { max-width:580px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid rgba(241,107,50,0.18); }
-    .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:#f16b32; }
-    h1 { margin:16px 0 8px 0; font-size:22px; }
-    p { margin:0 0 14px 0; line-height:1.6; color:#4b5563; }
-    label { display:block; font-weight:600; margin-bottom:6px; color:#111827; }
-    textarea { width:100%; min-height:130px; border:1px solid #e5e7eb; border-radius:10px; padding:12px; font-family:inherit; font-size:14px; resize:vertical; }
-    textarea:focus { outline:2px solid rgba(241,107,50,0.2); border-color:#f16b32; }
-    button { margin-top:14px; background:#f16b32; color:#ffffff; border:none; border-radius:12px; padding:12px 18px; font-weight:700; cursor:pointer; width:100%; font-size:15px; }
-    button:hover { background:#dd5c28; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <span class="badge">Rechazar solicitud</span>
-    <h1>Ingresa el motivo</h1>
-    <p>Solicitud: %s</p>
-    <form method="post" action="/rechazar-solicitud">
-      <input type="hidden" name="code" value="%s">
-      <label for="reason">Motivo de rechazo</label>
-      <textarea id="reason" name="reason" maxlength="800" required placeholder="Explica por qué se rechaza el documento..."></textarea>
-      <button type="submit">Enviar rechazo</button>
-    </form>
-  </div>
-</body>
-</html>
-""", safeName, safeCode);
+        return String.format(
+                """
+                        <!DOCTYPE html>
+                        <html lang="es">
+                        <head>
+                          <meta charset="UTF-8">
+                          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                          <title>Rechazar solicitud</title>
+                          <style>
+                            body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
+                            .card { max-width:580px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid rgba(241,107,50,0.18); }
+                            .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:#f16b32; }
+                            h1 { margin:16px 0 8px 0; font-size:22px; }
+                            p { margin:0 0 14px 0; line-height:1.6; color:#4b5563; }
+                            label { display:block; font-weight:600; margin-bottom:6px; color:#111827; }
+                            textarea { width:100%%; min-height:130px; border:1px solid #e5e7eb; border-radius:10px; padding:12px; font-family:inherit; font-size:14px; resize:vertical; }
+                            textarea:focus { outline:2px solid rgba(241,107,50,0.2); border-color:#f16b32; }
+                            button { margin-top:14px; background:#f16b32; color:#ffffff; border:none; border-radius:12px; padding:12px 18px; font-weight:700; cursor:pointer; width:100%%; font-size:15px; }
+                            button:hover { background:#dd5c28; }
+                          </style>
+                        </head>
+                        <body>
+                          <div class="card">
+                            <span class="badge">Rechazar solicitud</span>
+                            <h1>Ingresa el motivo</h1>
+                            <p>Solicitud: %s</p>
+                            <form method="post" action="/rechazar-solicitud">
+                              <input type="hidden" name="code" value="%s">
+                              <label for="reason">Motivo de rechazo</label>
+                              <textarea id="reason" name="reason" maxlength="800" required placeholder="Explica por qué se rechaza el documento..."></textarea>
+                              <button type="submit">Enviar rechazo</button>
+                            </form>
+                          </div>
+                        </body>
+                        </html>
+                        """,
+                safeName, safeCode);
     }
 
-    private String renderAdminInviteForm(String code, String email, String communityName) {
-        String safeEmail = escapeHtml(email);
+    private String renderAdminInviteForm(String code, AdminInviteInfoResponse invite) {
+        String safeEmail = escapeHtml(invite.adminEmail());
         String safeCode = escapeHtml(code);
-        String safeCommunity = escapeHtml(communityName);
-        return String.format("""
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Crear tu cuenta</title>
-  <style>
-    body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
-    .card { max-width:520px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid rgba(83,164,151,0.18); }
-    .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:#53a497; }
-    h1 { margin:16px 0 8px 0; font-size:22px; }
-    p { margin:0 0 14px 0; line-height:1.6; color:#4b5563; }
-    label { display:block; font-weight:600; margin-bottom:6px; color:#111827; }
-    input[type="password"] { width:100%; border:1px solid #e5e7eb; border-radius:10px; padding:12px; font-family:inherit; font-size:14px; }
-    input[type="password"]:focus { outline:2px solid rgba(83,164,151,0.2); border-color:#53a497; }
-    button { margin-top:14px; background:#53a497; color:#ffffff; border:none; border-radius:12px; padding:12px 18px; font-weight:700; cursor:pointer; width:100%; font-size:15px; }
-    button:hover { background:#3f897f; }
-    .readonly { padding:10px 12px; border-radius:10px; border:1px solid #e5e7eb; background:#f9fafb; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <span class="badge">Crear usuario administrador</span>
-    <h1>Para la comunidad %s</h1>
-    <p>Confirma tu correo y define una contraseña para acceder al panel.</p>
-    <form method="post" action="/registrar-admin">
-      <input type="hidden" name="code" value="%s">
-      <label>Correo</label>
-      <div class="readonly">%s</div>
-      <label for="password">Contraseña (mínimo 10 caracteres)</label>
-      <input id="password" name="password" type="password" minlength="10" required autocomplete="new-password" placeholder="••••••••••">
-      <button type="submit">Crear mi cuenta</button>
-    </form>
-  </div>
-</body>
-</html>
-""", safeCommunity, safeCode, safeEmail);
+        String safeCommunity = escapeHtml(invite.communityName());
+        String safeFirstName = escapeHtml(invite.firstName());
+        String safeLastName = escapeHtml(invite.lastName());
+        String safePhone = escapeHtml(invite.phone());
+        String safeDocument = escapeHtml(invite.documentNumber());
+        return String.format(
+                """
+                        <!DOCTYPE html>
+                        <html lang="es">
+                        <head>
+                          <meta charset="UTF-8">
+                          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                          <title>Crear tu cuenta</title>
+                          <style>
+                            body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
+                            .card { max-width:620px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid rgba(83,164,151,0.18); }
+                            .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:#53a497; }
+                            h1 { margin:16px 0 8px 0; font-size:22px; }
+                            p { margin:0 0 14px 0; line-height:1.6; color:#4b5563; }
+                            label { display:block; font-weight:600; margin-bottom:6px; color:#111827; }
+                            .field { margin-bottom:12px; }
+                            input[type="text"], input[type="tel"], input[type="password"] { width:100%%; border:1px solid #e5e7eb; border-radius:10px; padding:12px; font-family:inherit; font-size:14px; }
+                            input[type="text"]:focus, input[type="tel"]:focus, input[type="password"]:focus { outline:2px solid rgba(83,164,151,0.2); border-color:#53a497; }
+                            button { margin-top:14px; background:#53a497; color:#ffffff; border:none; border-radius:12px; padding:12px 18px; font-weight:700; cursor:pointer; width:100%%; font-size:15px; }
+                            button:hover { background:#3f897f; }
+                            .readonly { padding:10px 12px; border-radius:10px; border:1px solid #e5e7eb; background:#f9fafb; }
+                            .row { display:flex; gap:12px; }
+                            .row .col { flex:1; }
+                          </style>
+                        </head>
+                        <body>
+                          <div class="card">
+                            <span class="badge">Crear usuario administrador</span>
+                            <h1>Para la comunidad %s</h1>
+                            <p>Confirma y, si necesitas, ajusta tus datos antes de crear tu cuenta.</p>
+                            <form method="post" action="/registrar-admin">
+                              <input type="hidden" name="code" value="%s">
+                              <div class="field">
+                                <label>Correo</label>
+                                <div class="readonly">%s</div>
+                              </div>
+                              <div class="row">
+                                <div class="col field">
+                                  <label for="firstName">Nombre</label>
+                                  <input id="firstName" name="firstName" type="text" value="%s" required autocomplete="given-name" placeholder="Tu nombre">
+                                </div>
+                                <div class="col field">
+                                  <label for="lastName">Apellido</label>
+                                  <input id="lastName" name="lastName" type="text" value="%s" required autocomplete="family-name" placeholder="Tus apellidos">
+                                </div>
+                              </div>
+                              <div class="field">
+                                <label for="phone">Teléfono</label>
+                                <input id="phone" name="phone" type="tel" value="%s" required autocomplete="tel" placeholder="+56 9 1234 5678">
+                              </div>
+                              <div class="field">
+                                <label for="documentNumber">Documento</label>
+                                <input id="documentNumber" name="documentNumber" type="text" value="%s" required autocomplete="off" placeholder="Rut / Documento">
+                              </div>
+                              <div class="field">
+                                <label for="password">Contraseña (mínimo 10 caracteres)</label>
+                                <input id="password" name="password" type="password" minlength="10" required autocomplete="new-password" placeholder="••••••••••">
+                              </div>
+                              <button type="submit">Crear mi cuenta</button>
+                            </form>
+                          </div>
+                        </body>
+                        </html>
+                        """,
+                safeCommunity, safeCode, safeEmail, safeFirstName, safeLastName, safePhone, safeDocument);
     }
 
     private String renderAdminInviteResult(boolean success, String title, String message) {
@@ -528,30 +620,32 @@ public final class WebServer {
         String badge = success ? "Listo" : "No completado";
         String safeTitle = escapeHtml(title);
         String safeMessage = escapeHtml(message);
-        return String.format("""
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>%s</title>
-  <style>
-    body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
-    .card { max-width:520px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid %s; }
-    .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:%s; }
-    h1 { margin:16px 0 8px 0; font-size:22px; }
-    p { margin:0; line-height:1.6; color:#4b5563; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <span class="badge">%s</span>
-    <h1>%s</h1>
-    <p>%s</p>
-  </div>
-</body>
-</html>
-""", safeTitle, border, color, badge, safeTitle, safeMessage);
+        return String.format(
+                """
+                        <!DOCTYPE html>
+                        <html lang="es">
+                        <head>
+                          <meta charset="UTF-8">
+                          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                          <title>%s</title>
+                          <style>
+                            body { margin:0; padding:24px; background:#f4f6fb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#111827; }
+                            .card { max-width:520px; margin:0 auto; background:#ffffff; border-radius:14px; padding:28px 24px; box-shadow:0 8px 24px rgba(0,0,0,0.08); border:1px solid %s; }
+                            .badge { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#ffffff; background:%s; }
+                            h1 { margin:16px 0 8px 0; font-size:22px; }
+                            p { margin:0; line-height:1.6; color:#4b5563; }
+                          </style>
+                        </head>
+                        <body>
+                          <div class="card">
+                            <span class="badge">%s</span>
+                            <h1>%s</h1>
+                            <p>%s</p>
+                          </div>
+                        </body>
+                        </html>
+                        """,
+                safeTitle, border, color, badge, safeTitle, safeMessage);
     }
 
     private String escapeHtml(String value) {
@@ -591,11 +685,14 @@ public final class WebServer {
                 .check(req -> req.getFirstName() != null && !req.getFirstName().isBlank(), "firstName is required")
                 .check(req -> req.getLastName() != null && !req.getLastName().isBlank(), "lastName is required")
                 .check(req -> req.getPhone() != null && !req.getPhone().isBlank(), "phone is required")
-                .check(req -> req.getDocumentNumber() != null && !req.getDocumentNumber().isBlank(), "documentNumber is required")
+                .check(req -> req.getDocumentNumber() != null && !req.getDocumentNumber().isBlank(),
+                        "documentNumber is required")
                 .check(req -> req.getResident() != null, "resident is required")
                 .check(req -> req.getEmail() != null && !req.getEmail().isBlank(), "email is required")
-                .check(req -> req.getPassword() != null && req.getPassword().length() >= 10, "password must contain at least 10 characters")
-                .check(req -> !(req.getRoleId() != null && req.getRoleId() == 1L && req.getUnitId() == null), "admin requiere unidad/edificio asignado")
+                .check(req -> req.getPassword() != null && req.getPassword().length() >= 10,
+                        "password must contain at least 10 characters")
+                .check(req -> !(req.getRoleId() != null && req.getRoleId() == 1L && req.getUnitId() == null),
+                        "admin requiere unidad/edificio asignado")
                 .get();
     }
 
@@ -606,7 +703,8 @@ public final class WebServer {
                 .get();
     }
 
-    private CreateCommonExpensePeriodRequest validateCreatePeriod(BodyValidator<CreateCommonExpensePeriodRequest> validator) {
+    private CreateCommonExpensePeriodRequest validateCreatePeriod(
+            BodyValidator<CreateCommonExpensePeriodRequest> validator) {
         return validator
                 .check(req -> req.getBuildingId() != null, "buildingId es requerido")
                 .check(req -> req.getYear() != null, "year es requerido")
@@ -624,7 +722,8 @@ public final class WebServer {
     private CommonPaymentRequest validatePayment(BodyValidator<CommonPaymentRequest> validator) {
         return validator
                 .check(req -> req.getAmount() != null, "amount es requerido")
-                .check(req -> req.getPaymentMethod() != null && !req.getPaymentMethod().isBlank(), "paymentMethod es requerido")
+                .check(req -> req.getPaymentMethod() != null && !req.getPaymentMethod().isBlank(),
+                        "paymentMethod es requerido")
                 .get();
     }
 
@@ -681,13 +780,15 @@ public final class WebServer {
 
     private CreateVisitRequest validateCreateVisit(BodyValidator<CreateVisitRequest> validator) {
         return validator
-                .check(req -> req.getVisitorName() != null && !req.getVisitorName().isBlank(), "visitorName es requerido")
+                .check(req -> req.getVisitorName() != null && !req.getVisitorName().isBlank(),
+                        "visitorName es requerido")
                 .get();
     }
 
     private VisitContactRequest validateVisitContact(BodyValidator<VisitContactRequest> validator) {
         return validator
-                .check(req -> req.getVisitorName() != null && !req.getVisitorName().isBlank(), "visitorName es requerido")
+                .check(req -> req.getVisitorName() != null && !req.getVisitorName().isBlank(),
+                        "visitorName es requerido")
                 .get();
     }
 
@@ -718,7 +819,8 @@ public final class WebServer {
     private IncidentRequest validateIncident(BodyValidator<IncidentRequest> validator) {
         return validator
                 .check(req -> req.getTitle() != null && !req.getTitle().isBlank(), "title es requerido")
-                .check(req -> req.getDescription() != null && !req.getDescription().isBlank(), "description es requerido")
+                .check(req -> req.getDescription() != null && !req.getDescription().isBlank(),
+                        "description es requerido")
                 .check(req -> req.getCategory() != null && !req.getCategory().isBlank(), "category es requerido")
                 .get();
     }
@@ -736,8 +838,7 @@ public final class WebServer {
             return new CommunityRegistrationDocument(
                     uploaded.filename() != null ? uploaded.filename() : "registro.pdf",
                     uploaded.contentType(),
-                    bytes
-            );
+                    bytes);
         } catch (IOException e) {
             throw new ValidationException("No se pudo leer el archivo de registro: " + e.getMessage());
         }
