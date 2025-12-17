@@ -34,7 +34,8 @@ dependencies {
     implementation(libs.jakartaPersistence)
     implementation(libs.guice)
     implementation(libs.boxSdk)
-
+    implementation("com.sun.mail:jakarta.mail:2.0.1")
+    
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)
 
