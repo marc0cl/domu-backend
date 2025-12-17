@@ -21,6 +21,8 @@ import com.domu.dto.VisitFromContactRequest;
 import com.domu.dto.BuildingSummaryResponse;
 import com.domu.dto.IncidentRequest;
 import com.domu.dto.CommunityRegistrationDocument;
+import com.domu.dto.UpdateProfileRequest;
+import com.domu.dto.ChangePasswordRequest;
 import com.domu.service.BuildingService;
 import com.domu.service.CommonExpenseService;
 import com.domu.service.VisitService;
@@ -55,6 +57,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import com.domu.email.EmailService;
 
 @Singleton
 public final class WebServer {
@@ -73,6 +76,7 @@ public final class WebServer {
     private final ObjectMapper objectMapper;
     private final UserBuildingRepository userBuildingRepository;
     private final BuildingRepository buildingRepository;
+    private final EmailService emailService;
     private final Javalin app;
     private Integer port = -1;
 
@@ -89,7 +93,8 @@ public final class WebServer {
             final JwtProvider jwtProvider,
             final ObjectMapper objectMapper,
             final UserBuildingRepository userBuildingRepository,
-            final BuildingRepository buildingRepository) {
+            final BuildingRepository buildingRepository,
+            final EmailService emailService) {
         this.dataSource = dataSource;
         this.userService = userService;
         this.commonExpenseService = commonExpenseService;
@@ -102,6 +107,7 @@ public final class WebServer {
         this.objectMapper = objectMapper;
         this.userBuildingRepository = userBuildingRepository;
         this.buildingRepository = buildingRepository;
+        this.emailService = emailService;
         this.app = createApp();
     }
 
@@ -320,6 +326,7 @@ public final class WebServer {
         });
 
         javalin.before("/api/users/*", authenticationHandler);
+        javalin.before("/api/admin/*", authenticationHandler);
         javalin.before("/api/finance/*", authenticationHandler);
         javalin.before("/api/buildings/*", ctx -> {
             if ("/api/buildings/requests".equals(ctx.path())) {
@@ -340,6 +347,75 @@ public final class WebServer {
             Long activeBuildingId = resolveActiveBuildingId(user, buildings);
             UserResponse response = UserMapper.toResponseFromContext(ctx, buildings, activeBuildingId);
             ctx.json(response);
+        });
+
+        javalin.put("/api/users/me/profile", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            UpdateProfileRequest request = ctx.bodyValidator(UpdateProfileRequest.class)
+                    .check(r -> r.getFirstName() != null && !r.getFirstName().isBlank(), "firstName es requerido")
+                    .check(r -> r.getLastName() != null && !r.getLastName().isBlank(), "lastName es requerido")
+                    .check(r -> r.getPhone() != null && !r.getPhone().isBlank(), "phone es requerido")
+                    .check(r -> r.getDocumentNumber() != null && !r.getDocumentNumber().isBlank(),
+                            "documentNumber es requerido")
+                    .get();
+            User updated = userService.updateProfile(
+                    user,
+                    request.getFirstName(),
+                    request.getLastName(),
+                    request.getPhone(),
+                    request.getDocumentNumber());
+            var buildings = loadBuildings(updated);
+            Long activeBuildingId = resolveActiveBuildingId(updated, buildings);
+            ctx.json(UserMapper.toResponse(updated, buildings, activeBuildingId));
+        });
+
+        javalin.post("/api/users/me/password", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ChangePasswordRequest request = ctx.bodyValidator(ChangePasswordRequest.class)
+                    .check(r -> r.getCurrentPassword() != null && !r.getCurrentPassword().isBlank(),
+                            "currentPassword es requerido")
+                    .check(r -> r.getNewPassword() != null && r.getNewPassword().length() >= 10,
+                            "newPassword debe tener al menos 10 caracteres")
+                    .get();
+            userService.changePassword(user, request.getCurrentPassword(), request.getNewPassword());
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        javalin.post("/api/admin/users", ctx -> {
+            User current = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (current == null || current.roleId() == null || current.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(
+                        ErrorResponse.of("Solo administradores pueden crear usuarios", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            RegistrationRequest request = validateRegistration(ctx.bodyValidator(RegistrationRequest.class));
+            if (request.getRoleId() == null || (request.getRoleId() != 3L && request.getRoleId() != 4L)) {
+                throw new ValidationException("Solo puedes crear conserjes (rol 3) o funcionarios (rol 4)");
+            }
+            // Forzar resident=false para estos roles
+            request.setResident(false);
+            String rawPassword = request.getPassword();
+            if (rawPassword == null || rawPassword.isBlank()) {
+                rawPassword = "1234567890";
+            }
+
+            User created = userService.registerUser(
+                    request.getUnitId(),
+                    request.getRoleId(),
+                    request.getFirstName(),
+                    request.getLastName(),
+                    request.getBirthDate(),
+                    request.getEmail(),
+                    request.getPhone(),
+                    request.getDocumentNumber(),
+                    request.getResident(),
+                    rawPassword);
+            var buildings = loadBuildings(created);
+            Long activeBuildingId = resolveActiveBuildingId(created, buildings);
+            sendUserCredentialsEmail(created, rawPassword);
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(UserMapper.toResponse(created, buildings, activeBuildingId));
         });
 
         javalin.post("/api/finance/periods", ctx -> {
@@ -884,6 +960,39 @@ public final class WebServer {
             return sysProp.replaceAll("/+$", "");
         }
         return "http://localhost:5173";
+    }
+
+    private void sendUserCredentialsEmail(User user, String rawPassword) {
+        try {
+            if (user == null || user.email() == null || user.email().isBlank()) {
+                return;
+            }
+            String loginUrl = resolveFrontendBaseUrl() + "/login";
+            String subject = "Tu acceso a DOMU";
+            String roleLabel = "Funcionario";
+            if (user.roleId() != null && user.roleId() == 3L) {
+                roleLabel = "Conserje";
+            } else if (user.roleId() != null && user.roleId() == 4L) {
+                roleLabel = "Funcionario";
+            }
+            String html = """
+                    <h2>Hola %s,</h2>
+                    <p>Tu cuenta en DOMU fue creada.</p>
+                    <p><strong>Correo:</strong> %s<br/>
+                    <strong>Contraseña:</strong> %s<br/>
+                    <strong>Rol:</strong> %s</p>
+                    <p>Puedes iniciar sesión aquí: <a href="%s">%s</a></p>
+                    """.formatted(
+                    user.firstName() != null ? user.firstName() : "usuario",
+                    user.email(),
+                    rawPassword,
+                    roleLabel,
+                    loginUrl,
+                    loginUrl);
+            emailService.sendHtml(user.email(), subject, html);
+        } catch (Exception e) {
+            LOGGER.warn("No se pudo enviar el correo de credenciales: {}", e.getMessage());
+        }
     }
 
     public Integer getPort() {

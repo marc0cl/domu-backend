@@ -24,10 +24,44 @@ public class UserRepository {
         this.dataSource = dataSource;
     }
 
+    public User updateProfile(Long id, String firstName, String lastName, String phone, String documentNumber) {
+        String sql = "UPDATE users SET first_name = ?, last_name = ?, phone = ?, document_number = ? WHERE id = ?";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, firstName);
+            statement.setString(2, lastName);
+            statement.setString(3, phone);
+            statement.setString(4, documentNumber);
+            statement.setLong(5, id);
+            int updated = statement.executeUpdate();
+            if (updated == 0) {
+                throw new RepositoryException("No user updated");
+            }
+            return findById(id).orElseThrow(() -> new RepositoryException("User not found after update"));
+        } catch (SQLException e) {
+            throw new RepositoryException("Error updating user profile", e);
+        }
+    }
+
+    public void updatePassword(Long id, String passwordHash) {
+        String sql = "UPDATE users SET password_hash = ? WHERE id = ?";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, passwordHash);
+            statement.setLong(2, id);
+            int updated = statement.executeUpdate();
+            if (updated == 0) {
+                throw new RepositoryException("No user updated");
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error updating password", e);
+        }
+    }
+
     public Optional<User> findByEmail(String email) {
         String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status FROM users WHERE email = ?";
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, email);
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (resultSet.next()) {
@@ -43,7 +77,7 @@ public class UserRepository {
     public Optional<User> findById(Long id) {
         String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status FROM users WHERE id = ?";
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, id);
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (resultSet.next()) {
@@ -59,7 +93,7 @@ public class UserRepository {
     public User save(User user) {
         String sql = "INSERT INTO users (unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             if (user.unitId() != null) {
                 statement.setLong(1, user.unitId());
             } else {
@@ -120,19 +154,18 @@ public class UserRepository {
         java.time.LocalDateTime createdAt = createdAtRaw != null ? createdAtRaw.toLocalDateTime() : null;
         String status = resultSet.getString("status");
         return new User(
-            id,
-            unitId,
-            roleId,
-            firstName,
-            lastName,
-            email,
-            phone,
-            birthDate,
-            passwordHash,
-            documentNumber,
-            resident,
-            createdAt,
-            status
-        );
+                id,
+                unitId,
+                roleId,
+                firstName,
+                lastName,
+                email,
+                phone,
+                birthDate,
+                passwordHash,
+                documentNumber,
+                resident,
+                createdAt,
+                status);
     }
 }
