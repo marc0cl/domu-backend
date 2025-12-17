@@ -53,6 +53,8 @@ import com.zaxxer.hikari.HikariDataSource;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 @Singleton
 public final class WebServer {
@@ -207,21 +209,16 @@ public final class WebServer {
 
         javalin.get("/registrar-admin", ctx -> {
             String code = ctx.queryParam("code");
-            try {
-                AdminInviteInfoResponse invite = buildingService.getAdminInviteInfo(code);
-                ctx.contentType("text/html; charset=UTF-8");
-                ctx.result(renderAdminInviteForm(code, invite));
-            } catch (ValidationException e) {
+            if (code == null || code.isBlank()) {
                 ctx.status(HttpStatus.BAD_REQUEST);
                 ctx.contentType("text/html; charset=UTF-8");
-                ctx.result(renderAdminInviteResult(false, "Enlace inválido", e.getMessage()));
-            } catch (Exception e) {
-                LOGGER.error("Error mostrando formulario de registro de admin", e);
-                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
-                ctx.contentType("text/html; charset=UTF-8");
-                ctx.result(renderAdminInviteResult(false, "Error inesperado",
-                        "Ocurrió un problema al procesar el enlace. Intenta nuevamente."));
+                ctx.result(renderAdminInviteResult(false, "Enlace inválido", "Falta el código de invitación."));
+                return;
             }
+            String frontendBaseUrl = resolveFrontendBaseUrl();
+            String targetUrl = frontendBaseUrl + "/registrar-admin?code="
+                    + URLEncoder.encode(code, StandardCharsets.UTF_8);
+            ctx.redirect(targetUrl);
         });
 
         javalin.post("/registrar-admin", ctx -> {
@@ -875,6 +872,18 @@ public final class WebServer {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private String resolveFrontendBaseUrl() {
+        String envValue = System.getenv("FRONTEND_BASE_URL");
+        if (envValue != null && !envValue.isBlank()) {
+            return envValue.replaceAll("/+$", "");
+        }
+        String sysProp = System.getProperty("frontend.base.url");
+        if (sysProp != null && !sysProp.isBlank()) {
+            return sysProp.replaceAll("/+$", "");
+        }
+        return "http://localhost:5173";
     }
 
     public Integer getPort() {
