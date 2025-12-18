@@ -23,6 +23,7 @@ import com.domu.dto.IncidentRequest;
 import com.domu.dto.CommunityRegistrationDocument;
 import com.domu.dto.UpdateProfileRequest;
 import com.domu.dto.ChangePasswordRequest;
+import com.domu.dto.IncidentStatusUpdateRequest;
 import com.domu.service.BuildingService;
 import com.domu.service.CommonExpenseService;
 import com.domu.service.VisitService;
@@ -533,6 +534,15 @@ public final class WebServer {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.status(HttpStatus.CREATED);
             ctx.json(incidentService.create(user, request));
+        });
+
+        javalin.put("/api/incidents/{incidentId}/status", ctx -> {
+            Long incidentId = Long.parseLong(ctx.pathParam("incidentId"));
+            IncidentStatusUpdateRequest request = ctx.bodyValidator(IncidentStatusUpdateRequest.class)
+                    .check(req -> req.getStatus() != null && !req.getStatus().isBlank(), "status es obligatorio")
+                    .get();
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(incidentService.updateStatus(user, incidentId, request.getStatus()));
         });
     }
 

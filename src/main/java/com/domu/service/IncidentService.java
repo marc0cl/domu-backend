@@ -42,8 +42,7 @@ public class IncidentService {
                 priority,
                 status,
                 createdAt,
-                createdAt
-        ));
+                createdAt));
 
         return toResponse(saved);
     }
@@ -77,6 +76,16 @@ public class IncidentService {
         return new IncidentListResponse(reported, inProgress, closed);
     }
 
+    public IncidentResponse updateStatus(User user, Long incidentId, String newStatus) {
+        ensureAdminOrConcierge(user);
+        String status = normalizeStatus(newStatus);
+        IncidentRepository.IncidentRow existing = incidentRepository.findById(incidentId)
+                .orElseThrow(() -> new ValidationException("Incidente no encontrado"));
+        IncidentRepository.IncidentRow updated = incidentRepository.updateStatus(existing.id(), status,
+                LocalDateTime.now());
+        return toResponse(updated);
+    }
+
     private IncidentResponse toResponse(IncidentRepository.IncidentRow row) {
         return new IncidentResponse(
                 row.id(),
@@ -88,8 +97,7 @@ public class IncidentService {
                 row.priority(),
                 row.status(),
                 row.createdAt(),
-                row.updatedAt()
-        );
+                row.updatedAt());
     }
 
     private void validate(IncidentRequest request) {
@@ -141,5 +149,10 @@ public class IncidentService {
         }
         return Objects.equals(user.roleId(), 1L) || Objects.equals(user.roleId(), 3L);
     }
-}
 
+    private void ensureAdminOrConcierge(User user) {
+        if (!isAdminOrConcierge(user)) {
+            throw new UnauthorizedResponse("Solo administradores o conserjes pueden actualizar incidentes");
+        }
+    }
+}

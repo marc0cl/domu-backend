@@ -30,7 +30,7 @@ public class IncidentRepository {
                 """;
         LocalDateTime createdAt = incident.createdAt() != null ? incident.createdAt() : LocalDateTime.now();
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             statement.setLong(1, incident.userId());
             if (incident.unitId() != null) {
                 statement.setLong(2, incident.unitId());
@@ -57,8 +57,7 @@ public class IncidentRepository {
                             incident.priority(),
                             incident.status(),
                             createdAt,
-                            createdAt
-                    );
+                            createdAt);
                 }
             }
             throw new RepositoryException("No se pudo obtener el id del incidente");
@@ -75,6 +74,49 @@ public class IncidentRepository {
     public List<IncidentRow> findByUser(Long userId, LocalDateTime from, LocalDateTime to) {
         String sql = baseQuery(from, to, true);
         return executeQuery(sql, userId, from, to);
+    }
+
+    public Optional<IncidentRow> findById(Long id) {
+        String sql = """
+                SELECT id, user_id, unit_id, title, description, category, priority, status, created_at, updated_at
+                FROM incidents
+                WHERE id = ?
+                """;
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, id);
+            try (ResultSet rs = statement.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.of(mapRow(rs));
+                }
+            }
+            return Optional.empty();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error obteniendo incidente", e);
+        }
+    }
+
+    public IncidentRow updateStatus(Long id, String status, LocalDateTime updatedAt) {
+        String sql = """
+                UPDATE incidents
+                SET status = ?, updated_at = ?
+                WHERE id = ?
+                """;
+        LocalDateTime effectiveUpdatedAt = updatedAt != null ? updatedAt : LocalDateTime.now();
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, status);
+            statement.setTimestamp(2, Timestamp.valueOf(effectiveUpdatedAt));
+            statement.setLong(3, id);
+            int updated = statement.executeUpdate();
+            if (updated == 0) {
+                throw new RepositoryException("Incidente no encontrado para actualizar estado");
+            }
+            return findById(id)
+                    .orElseThrow(() -> new RepositoryException("No se pudo recuperar el incidente actualizado"));
+        } catch (SQLException e) {
+            throw new RepositoryException("Error actualizando estado del incidente", e);
+        }
     }
 
     private String baseQuery(LocalDateTime from, LocalDateTime to, boolean filterByUser) {
@@ -99,7 +141,7 @@ public class IncidentRepository {
     private List<IncidentRow> executeQuery(String sql, Long userId, LocalDateTime from, LocalDateTime to) {
         List<IncidentRow> results = new ArrayList<>();
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             Integer idx = 1;
             if (userId != null) {
                 statement.setLong(idx++, userId);
@@ -133,8 +175,7 @@ public class IncidentRepository {
                 rs.getString("priority"),
                 rs.getString("status"),
                 rs.getTimestamp("created_at").toLocalDateTime(),
-                updated != null ? updated.toLocalDateTime() : null
-        );
+                updated != null ? updated.toLocalDateTime() : null);
     }
 
     public record IncidentRow(
@@ -147,8 +188,6 @@ public class IncidentRepository {
             String priority,
             String status,
             LocalDateTime createdAt,
-            LocalDateTime updatedAt
-    ) {
+            LocalDateTime updatedAt) {
     }
 }
-
