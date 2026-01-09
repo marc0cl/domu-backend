@@ -46,6 +46,7 @@ dependencies {
     testImplementation(libs.assertj)
     testImplementation(libs.mockito)
     testImplementation(libs.javalinTesttools)
+    testImplementation("org.mockito:mockito-junit-jupiter:5.14.2")
 }
 
 application {

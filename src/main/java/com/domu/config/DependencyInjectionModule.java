@@ -8,6 +8,7 @@ import com.domu.database.UserBuildingRepository;
 import com.domu.database.VisitRepository;
 import com.domu.database.VisitContactRepository;
 import com.domu.database.IncidentRepository;
+import com.domu.database.PollRepository;
 import com.domu.security.AuthenticationHandler;
 import com.domu.security.BCryptPasswordHasher;
 import com.domu.security.JwtProvider;
@@ -18,6 +19,7 @@ import com.domu.service.CommunityRegistrationStorageService;
 import com.domu.service.VisitService;
 import com.domu.service.VisitContactService;
 import com.domu.service.IncidentService;
+import com.domu.service.PollService;
 import com.domu.service.UserService;
 import com.domu.web.WebServer;
 import com.google.inject.AbstractModule;
@@ -57,6 +59,7 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(VisitService.class).in(Scopes.SINGLETON);
         bind(VisitContactService.class).in(Scopes.SINGLETON);
         bind(IncidentService.class).in(Scopes.SINGLETON);
+        bind(PollService.class).in(Scopes.SINGLETON);
         bind(UserRepository.class).in(Scopes.SINGLETON);
         bind(CommonExpenseRepository.class).in(Scopes.SINGLETON);
         bind(BuildingRepository.class).in(Scopes.SINGLETON);
@@ -64,6 +67,7 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(VisitRepository.class).in(Scopes.SINGLETON);
         bind(VisitContactRepository.class).in(Scopes.SINGLETON);
         bind(IncidentRepository.class).in(Scopes.SINGLETON);
+        bind(PollRepository.class).in(Scopes.SINGLETON);
         bind(AuthenticationHandler.class).in(Scopes.SINGLETON);
         bind(PasswordHasher.class).to(BCryptPasswordHasher.class).in(Scopes.SINGLETON);
     }

@@ -24,11 +24,14 @@ import com.domu.dto.CommunityRegistrationDocument;
 import com.domu.dto.UpdateProfileRequest;
 import com.domu.dto.ChangePasswordRequest;
 import com.domu.dto.IncidentStatusUpdateRequest;
+import com.domu.dto.CreatePollRequest;
+import com.domu.dto.VoteRequest;
 import com.domu.service.BuildingService;
 import com.domu.service.CommonExpenseService;
 import com.domu.service.VisitService;
 import com.domu.service.VisitContactService;
 import com.domu.service.IncidentService;
+import com.domu.service.PollService;
 import com.domu.security.AuthenticationHandler;
 import com.domu.security.JwtProvider;
 import com.domu.service.InvalidCredentialsException;
@@ -72,6 +75,7 @@ public final class WebServer {
     private final VisitService visitService;
     private final VisitContactService visitContactService;
     private final IncidentService incidentService;
+    private final PollService pollService;
     private final AuthenticationHandler authenticationHandler;
     private final JwtProvider jwtProvider;
     private final ObjectMapper objectMapper;
@@ -90,6 +94,7 @@ public final class WebServer {
             final VisitService visitService,
             final VisitContactService visitContactService,
             final IncidentService incidentService,
+            final PollService pollService,
             final AuthenticationHandler authenticationHandler,
             final JwtProvider jwtProvider,
             final ObjectMapper objectMapper,
@@ -103,6 +108,7 @@ public final class WebServer {
         this.visitService = visitService;
         this.visitContactService = visitContactService;
         this.incidentService = incidentService;
+        this.pollService = pollService;
         this.authenticationHandler = authenticationHandler;
         this.jwtProvider = jwtProvider;
         this.objectMapper = objectMapper;
@@ -341,6 +347,8 @@ public final class WebServer {
         javalin.before("/api/visit-contacts/*", authenticationHandler);
         javalin.before("/api/incidents", authenticationHandler);
         javalin.before("/api/incidents/*", authenticationHandler);
+        javalin.before("/api/polls", authenticationHandler);
+        javalin.before("/api/polls/*", authenticationHandler);
 
         javalin.get("/api/users/me", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
@@ -543,6 +551,47 @@ public final class WebServer {
                     .get();
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.json(incidentService.updateStatus(user, incidentId, request.getStatus()));
+        });
+
+        javalin.get("/api/polls", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            String status = ctx.queryParam("status");
+            ctx.json(pollService.list(user, status));
+        });
+
+        javalin.post("/api/polls", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            CreatePollRequest request = ctx.bodyValidator(CreatePollRequest.class).get();
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(pollService.create(user, request));
+        });
+
+        javalin.get("/api/polls/{pollId}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long pollId = Long.parseLong(ctx.pathParam("pollId"));
+            ctx.json(pollService.get(user, pollId));
+        });
+
+        javalin.post("/api/polls/{pollId}/votes", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long pollId = Long.parseLong(ctx.pathParam("pollId"));
+            VoteRequest request = ctx.bodyValidator(VoteRequest.class).get();
+            ctx.json(pollService.vote(user, pollId, request));
+        });
+
+        javalin.patch("/api/polls/{pollId}/close", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long pollId = Long.parseLong(ctx.pathParam("pollId"));
+            ctx.json(pollService.close(user, pollId));
+        });
+
+        javalin.get("/api/polls/{pollId}/export", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long pollId = Long.parseLong(ctx.pathParam("pollId"));
+            String csv = pollService.exportCsv(user, pollId);
+            ctx.header("Content-Disposition", "attachment; filename=\"poll-" + pollId + ".csv\"");
+            ctx.contentType("text/csv; charset=UTF-8");
+            ctx.result(csv);
         });
     }
 
