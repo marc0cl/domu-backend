@@ -24,11 +24,18 @@ import com.domu.dto.CommunityRegistrationDocument;
 import com.domu.dto.UpdateProfileRequest;
 import com.domu.dto.ChangePasswordRequest;
 import com.domu.dto.IncidentStatusUpdateRequest;
+import com.domu.dto.CreatePollRequest;
+import com.domu.dto.VoteRequest;
+import com.domu.dto.AmenityRequest;
+import com.domu.dto.TimeSlotRequest;
+import com.domu.dto.ReservationRequest;
+import com.domu.service.AmenityService;
 import com.domu.service.BuildingService;
 import com.domu.service.CommonExpenseService;
 import com.domu.service.VisitService;
 import com.domu.service.VisitContactService;
 import com.domu.service.IncidentService;
+import com.domu.service.PollService;
 import com.domu.security.AuthenticationHandler;
 import com.domu.security.JwtProvider;
 import com.domu.service.InvalidCredentialsException;
@@ -72,6 +79,8 @@ public final class WebServer {
     private final VisitService visitService;
     private final VisitContactService visitContactService;
     private final IncidentService incidentService;
+    private final PollService pollService;
+    private final AmenityService amenityService;
     private final AuthenticationHandler authenticationHandler;
     private final JwtProvider jwtProvider;
     private final ObjectMapper objectMapper;
@@ -90,6 +99,8 @@ public final class WebServer {
             final VisitService visitService,
             final VisitContactService visitContactService,
             final IncidentService incidentService,
+            final PollService pollService,
+            final AmenityService amenityService,
             final AuthenticationHandler authenticationHandler,
             final JwtProvider jwtProvider,
             final ObjectMapper objectMapper,
@@ -103,6 +114,8 @@ public final class WebServer {
         this.visitService = visitService;
         this.visitContactService = visitContactService;
         this.incidentService = incidentService;
+        this.pollService = pollService;
+        this.amenityService = amenityService;
         this.authenticationHandler = authenticationHandler;
         this.jwtProvider = jwtProvider;
         this.objectMapper = objectMapper;
@@ -341,6 +354,12 @@ public final class WebServer {
         javalin.before("/api/visit-contacts/*", authenticationHandler);
         javalin.before("/api/incidents", authenticationHandler);
         javalin.before("/api/incidents/*", authenticationHandler);
+        javalin.before("/api/polls", authenticationHandler);
+        javalin.before("/api/polls/*", authenticationHandler);
+        javalin.before("/api/amenities", authenticationHandler);
+        javalin.before("/api/amenities/*", authenticationHandler);
+        javalin.before("/api/reservations", authenticationHandler);
+        javalin.before("/api/reservations/*", authenticationHandler);
 
         javalin.get("/api/users/me", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
@@ -543,6 +562,131 @@ public final class WebServer {
                     .get();
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.json(incidentService.updateStatus(user, incidentId, request.getStatus()));
+        });
+
+        javalin.get("/api/polls", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            String status = ctx.queryParam("status");
+            ctx.json(pollService.list(user, status));
+        });
+
+        javalin.post("/api/polls", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            CreatePollRequest request = ctx.bodyValidator(CreatePollRequest.class).get();
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(pollService.create(user, request));
+        });
+
+        javalin.get("/api/polls/{pollId}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long pollId = Long.parseLong(ctx.pathParam("pollId"));
+            ctx.json(pollService.get(user, pollId));
+        });
+
+        javalin.post("/api/polls/{pollId}/votes", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long pollId = Long.parseLong(ctx.pathParam("pollId"));
+            VoteRequest request = ctx.bodyValidator(VoteRequest.class).get();
+            ctx.json(pollService.vote(user, pollId, request));
+        });
+
+        javalin.patch("/api/polls/{pollId}/close", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long pollId = Long.parseLong(ctx.pathParam("pollId"));
+            ctx.json(pollService.close(user, pollId));
+        });
+
+        javalin.get("/api/polls/{pollId}/export", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long pollId = Long.parseLong(ctx.pathParam("pollId"));
+            String csv = pollService.exportCsv(user, pollId);
+            ctx.header("Content-Disposition", "attachment; filename=\"poll-" + pollId + ".csv\"");
+            ctx.contentType("text/csv; charset=UTF-8");
+            ctx.result(csv);
+        });
+
+        // ==================== AMENITIES (Áreas Comunes) ====================
+        // IMPORTANTE: Las rutas específicas deben ir ANTES de las rutas con parámetros
+
+        javalin.get("/api/amenities/all", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(amenityService.listAllAmenities(user));
+        });
+
+        javalin.get("/api/amenities", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(amenityService.listAmenities(user));
+        });
+
+        javalin.post("/api/amenities", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            AmenityRequest request = ctx.bodyValidator(AmenityRequest.class).get();
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(amenityService.createAmenity(user, request));
+        });
+
+        javalin.get("/api/amenities/{amenityId}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long amenityId = Long.parseLong(ctx.pathParam("amenityId"));
+            ctx.json(amenityService.getAmenity(user, amenityId));
+        });
+
+        javalin.put("/api/amenities/{amenityId}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long amenityId = Long.parseLong(ctx.pathParam("amenityId"));
+            AmenityRequest request = ctx.bodyValidator(AmenityRequest.class).get();
+            ctx.json(amenityService.updateAmenity(user, amenityId, request));
+        });
+
+        javalin.delete("/api/amenities/{amenityId}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long amenityId = Long.parseLong(ctx.pathParam("amenityId"));
+            amenityService.deleteAmenity(user, amenityId);
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        javalin.post("/api/amenities/{amenityId}/time-slots", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long amenityId = Long.parseLong(ctx.pathParam("amenityId"));
+            TimeSlotRequest request = ctx.bodyValidator(TimeSlotRequest.class).get();
+            ctx.json(amenityService.configureTimeSlots(user, amenityId, request));
+        });
+
+        javalin.get("/api/amenities/{amenityId}/availability", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long amenityId = Long.parseLong(ctx.pathParam("amenityId"));
+            String date = ctx.queryParam("date");
+            if (date == null || date.isBlank()) {
+                date = java.time.LocalDate.now().toString();
+            }
+            ctx.json(amenityService.getAvailability(user, amenityId, date));
+        });
+
+        javalin.post("/api/amenities/{amenityId}/reserve", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long amenityId = Long.parseLong(ctx.pathParam("amenityId"));
+            ReservationRequest request = ctx.bodyValidator(ReservationRequest.class).get();
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(amenityService.createReservation(user, amenityId, request));
+        });
+
+        javalin.get("/api/amenities/{amenityId}/reservations", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long amenityId = Long.parseLong(ctx.pathParam("amenityId"));
+            ctx.json(amenityService.getReservationsByAmenity(user, amenityId));
+        });
+
+        // ==================== RESERVATIONS ====================
+
+        javalin.get("/api/reservations/my", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(amenityService.getMyReservations(user));
+        });
+
+        javalin.delete("/api/reservations/{reservationId}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long reservationId = Long.parseLong(ctx.pathParam("reservationId"));
+            ctx.json(amenityService.cancelReservation(user, reservationId));
         });
     }
 
