@@ -26,6 +26,10 @@ import com.domu.dto.ChangePasswordRequest;
 import com.domu.dto.IncidentStatusUpdateRequest;
 import com.domu.dto.CreatePollRequest;
 import com.domu.dto.VoteRequest;
+import com.domu.dto.AmenityRequest;
+import com.domu.dto.TimeSlotRequest;
+import com.domu.dto.ReservationRequest;
+import com.domu.service.AmenityService;
 import com.domu.service.BuildingService;
 import com.domu.service.CommonExpenseService;
 import com.domu.service.VisitService;
@@ -76,6 +80,7 @@ public final class WebServer {
     private final VisitContactService visitContactService;
     private final IncidentService incidentService;
     private final PollService pollService;
+    private final AmenityService amenityService;
     private final AuthenticationHandler authenticationHandler;
     private final JwtProvider jwtProvider;
     private final ObjectMapper objectMapper;
@@ -95,6 +100,7 @@ public final class WebServer {
             final VisitContactService visitContactService,
             final IncidentService incidentService,
             final PollService pollService,
+            final AmenityService amenityService,
             final AuthenticationHandler authenticationHandler,
             final JwtProvider jwtProvider,
             final ObjectMapper objectMapper,
@@ -109,6 +115,7 @@ public final class WebServer {
         this.visitContactService = visitContactService;
         this.incidentService = incidentService;
         this.pollService = pollService;
+        this.amenityService = amenityService;
         this.authenticationHandler = authenticationHandler;
         this.jwtProvider = jwtProvider;
         this.objectMapper = objectMapper;
@@ -349,6 +356,10 @@ public final class WebServer {
         javalin.before("/api/incidents/*", authenticationHandler);
         javalin.before("/api/polls", authenticationHandler);
         javalin.before("/api/polls/*", authenticationHandler);
+        javalin.before("/api/amenities", authenticationHandler);
+        javalin.before("/api/amenities/*", authenticationHandler);
+        javalin.before("/api/reservations", authenticationHandler);
+        javalin.before("/api/reservations/*", authenticationHandler);
 
         javalin.get("/api/users/me", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
@@ -592,6 +603,90 @@ public final class WebServer {
             ctx.header("Content-Disposition", "attachment; filename=\"poll-" + pollId + ".csv\"");
             ctx.contentType("text/csv; charset=UTF-8");
             ctx.result(csv);
+        });
+
+        // ==================== AMENITIES (Áreas Comunes) ====================
+        // IMPORTANTE: Las rutas específicas deben ir ANTES de las rutas con parámetros
+
+        javalin.get("/api/amenities/all", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(amenityService.listAllAmenities(user));
+        });
+
+        javalin.get("/api/amenities", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(amenityService.listAmenities(user));
+        });
+
+        javalin.post("/api/amenities", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            AmenityRequest request = ctx.bodyValidator(AmenityRequest.class).get();
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(amenityService.createAmenity(user, request));
+        });
+
+        javalin.get("/api/amenities/{amenityId}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long amenityId = Long.parseLong(ctx.pathParam("amenityId"));
+            ctx.json(amenityService.getAmenity(user, amenityId));
+        });
+
+        javalin.put("/api/amenities/{amenityId}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long amenityId = Long.parseLong(ctx.pathParam("amenityId"));
+            AmenityRequest request = ctx.bodyValidator(AmenityRequest.class).get();
+            ctx.json(amenityService.updateAmenity(user, amenityId, request));
+        });
+
+        javalin.delete("/api/amenities/{amenityId}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long amenityId = Long.parseLong(ctx.pathParam("amenityId"));
+            amenityService.deleteAmenity(user, amenityId);
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        javalin.post("/api/amenities/{amenityId}/time-slots", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long amenityId = Long.parseLong(ctx.pathParam("amenityId"));
+            TimeSlotRequest request = ctx.bodyValidator(TimeSlotRequest.class).get();
+            ctx.json(amenityService.configureTimeSlots(user, amenityId, request));
+        });
+
+        javalin.get("/api/amenities/{amenityId}/availability", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long amenityId = Long.parseLong(ctx.pathParam("amenityId"));
+            String date = ctx.queryParam("date");
+            if (date == null || date.isBlank()) {
+                date = java.time.LocalDate.now().toString();
+            }
+            ctx.json(amenityService.getAvailability(user, amenityId, date));
+        });
+
+        javalin.post("/api/amenities/{amenityId}/reserve", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long amenityId = Long.parseLong(ctx.pathParam("amenityId"));
+            ReservationRequest request = ctx.bodyValidator(ReservationRequest.class).get();
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(amenityService.createReservation(user, amenityId, request));
+        });
+
+        javalin.get("/api/amenities/{amenityId}/reservations", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long amenityId = Long.parseLong(ctx.pathParam("amenityId"));
+            ctx.json(amenityService.getReservationsByAmenity(user, amenityId));
+        });
+
+        // ==================== RESERVATIONS ====================
+
+        javalin.get("/api/reservations/my", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(amenityService.getMyReservations(user));
+        });
+
+        javalin.delete("/api/reservations/{reservationId}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long reservationId = Long.parseLong(ctx.pathParam("reservationId"));
+            ctx.json(amenityService.cancelReservation(user, reservationId));
         });
     }
 
