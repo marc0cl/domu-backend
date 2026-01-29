@@ -81,12 +81,14 @@ public final class WebServer {
     private final IncidentService incidentService;
     private final PollService pollService;
     private final AmenityService amenityService;
+    private final com.domu.service.HousingUnitService housingUnitService;
     private final AuthenticationHandler authenticationHandler;
     private final JwtProvider jwtProvider;
     private final ObjectMapper objectMapper;
     private final UserBuildingRepository userBuildingRepository;
     private final BuildingRepository buildingRepository;
     private final EmailService emailService;
+    private final com.domu.database.UserRepository userRepository;
     private final Javalin app;
     private Integer port = -1;
 
@@ -101,12 +103,14 @@ public final class WebServer {
             final IncidentService incidentService,
             final PollService pollService,
             final AmenityService amenityService,
+            final com.domu.service.HousingUnitService housingUnitService,
             final AuthenticationHandler authenticationHandler,
             final JwtProvider jwtProvider,
             final ObjectMapper objectMapper,
             final UserBuildingRepository userBuildingRepository,
             final BuildingRepository buildingRepository,
-            final EmailService emailService) {
+            final EmailService emailService,
+            final com.domu.database.UserRepository userRepository) {
         this.dataSource = dataSource;
         this.userService = userService;
         this.commonExpenseService = commonExpenseService;
@@ -116,12 +120,14 @@ public final class WebServer {
         this.incidentService = incidentService;
         this.pollService = pollService;
         this.amenityService = amenityService;
+        this.housingUnitService = housingUnitService;
         this.authenticationHandler = authenticationHandler;
         this.jwtProvider = jwtProvider;
         this.objectMapper = objectMapper;
         this.userBuildingRepository = userBuildingRepository;
         this.buildingRepository = buildingRepository;
         this.emailService = emailService;
+        this.userRepository = userRepository;
         this.app = createApp();
     }
 
@@ -361,6 +367,20 @@ public final class WebServer {
         javalin.before("/api/reservations", authenticationHandler);
         javalin.before("/api/reservations/*", authenticationHandler);
 
+        // Extraer X-Building-Id header para filtrar datos por comunidad
+        // La validación de acceso se hace en cada endpoint que use este valor
+        javalin.before("/api/*", ctx -> {
+            String buildingIdHeader = ctx.header("X-Building-Id");
+            if (buildingIdHeader != null && !buildingIdHeader.isBlank()) {
+                try {
+                    Long selectedBuildingId = Long.parseLong(buildingIdHeader.trim());
+                    ctx.attribute("selectedBuildingId", selectedBuildingId);
+                } catch (NumberFormatException e) {
+                    LOGGER.warn("Invalid X-Building-Id header value: {}", buildingIdHeader);
+                }
+            }
+        });
+
         javalin.get("/api/users/me", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             var buildings = loadBuildings(user);
@@ -438,6 +458,148 @@ public final class WebServer {
             ctx.json(UserMapper.toResponse(created, buildings, activeBuildingId));
         });
 
+        // Obtener residentes del edificio seleccionado, agrupados por unidad
+        javalin.get("/api/admin/residents", ctx -> {
+            User current = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (current == null || current.roleId() == null ||
+                    (current.roleId() != 1L && current.roleId() != 3L)) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores y conserjes pueden ver residentes",
+                        HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long selectedBuildingId = validateSelectedBuilding(ctx, current);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            var residents = userRepository.findResidentsByBuilding(selectedBuildingId);
+            var response = residents.stream()
+                    .map(com.domu.dto.ResidentResponse::from)
+                    .toList();
+            ctx.json(response);
+        });
+
+        // ===== HOUSING UNITS ENDPOINTS =====
+
+        // Listar unidades del edificio seleccionado
+        javalin.get("/api/admin/housing-units", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            var units = housingUnitService.listByBuilding(user.id(), selectedBuildingId);
+            ctx.json(units);
+        });
+
+        // Obtener detalle de una unidad
+        javalin.get("/api/admin/housing-units/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long unitId = Long.parseLong(ctx.pathParam("id"));
+            var unit = housingUnitService.getById(user.id(), unitId);
+            ctx.json(unit);
+        });
+
+        // Crear nueva unidad
+        javalin.post("/api/admin/housing-units", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            com.domu.dto.HousingUnitRequest request = ctx.bodyValidator(com.domu.dto.HousingUnitRequest.class)
+                    .check(r -> r.getNumber() != null && !r.getNumber().isBlank(), "number es requerido")
+                    .check(r -> r.getTower() != null && !r.getTower().isBlank(), "tower es requerida")
+                    .check(r -> r.getFloor() != null && !r.getFloor().isBlank(), "floor es requerido")
+                    .get();
+            var created = housingUnitService.create(user.id(), selectedBuildingId, request);
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(created);
+        });
+
+        // Actualizar unidad existente
+        javalin.put("/api/admin/housing-units/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long unitId = Long.parseLong(ctx.pathParam("id"));
+            com.domu.dto.HousingUnitRequest request = ctx.bodyValidator(com.domu.dto.HousingUnitRequest.class)
+                    .check(r -> r.getNumber() != null && !r.getNumber().isBlank(), "number es requerido")
+                    .check(r -> r.getTower() != null && !r.getTower().isBlank(), "tower es requerida")
+                    .check(r -> r.getFloor() != null && !r.getFloor().isBlank(), "floor es requerido")
+                    .get();
+            var updated = housingUnitService.update(user.id(), unitId, request);
+            ctx.json(updated);
+        });
+
+        // Eliminar unidad (soft delete)
+        javalin.delete("/api/admin/housing-units/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long unitId = Long.parseLong(ctx.pathParam("id"));
+            housingUnitService.delete(user.id(), unitId);
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        // Vincular residente a unidad
+        javalin.post("/api/admin/housing-units/{id}/residents", ctx -> {
+            try {
+                User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+                String unitIdParam = ctx.pathParam("id");
+                Long unitId;
+                try {
+                    unitId = Long.parseLong(unitIdParam);
+                } catch (NumberFormatException e) {
+                    LOGGER.error("ID de unidad inválido: {}", unitIdParam);
+                    ctx.status(HttpStatus.BAD_REQUEST);
+                    ctx.json(ErrorResponse.of("ID de unidad inválido: " + unitIdParam,
+                            HttpStatus.BAD_REQUEST.getCode()));
+                    return;
+                }
+
+                com.domu.dto.LinkResidentToUnitRequest request = ctx
+                        .bodyValidator(com.domu.dto.LinkResidentToUnitRequest.class)
+                        .check(r -> r.getUserId() != null, "userId es requerido")
+                        .get();
+
+                LOGGER.info("Vinculando residente {} a unidad {}", request.getUserId(), unitId);
+                housingUnitService.linkResident(user.id(), request.getUserId(), unitId);
+                LOGGER.info("Residente {} vinculado exitosamente a unidad {}", request.getUserId(), unitId);
+                ctx.status(HttpStatus.NO_CONTENT);
+            } catch (com.domu.service.ValidationException e) {
+                LOGGER.error("Error validando vinculación de residente", e);
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of(e.getMessage(), HttpStatus.BAD_REQUEST.getCode()));
+            } catch (Exception e) {
+                LOGGER.error("Error vinculando residente a unidad", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.json(ErrorResponse.of("Error al vincular residente: " + e.getMessage(),
+                        HttpStatus.INTERNAL_SERVER_ERROR.getCode()));
+            }
+        });
+
+        // Desvincular residente de unidad
+        javalin.delete("/api/admin/housing-units/{id}/residents/{userId}", ctx -> {
+            try {
+                User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+                Long residentUserId = Long.parseLong(ctx.pathParam("userId"));
+                housingUnitService.unlinkResident(user.id(), residentUserId);
+                ctx.status(HttpStatus.NO_CONTENT);
+            } catch (com.domu.service.ValidationException e) {
+                LOGGER.error("Error validando desvinculación de residente", e);
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of(e.getMessage(), HttpStatus.BAD_REQUEST.getCode()));
+            } catch (Exception e) {
+                LOGGER.error("Error desvinculando residente de unidad", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.json(ErrorResponse.of("Error al desvincular residente: " + e.getMessage(),
+                        HttpStatus.INTERNAL_SERVER_ERROR.getCode()));
+            }
+        });
+
         javalin.post("/api/finance/periods", ctx -> {
             CreateCommonExpensePeriodRequest request = validateCreatePeriod(
                     ctx.bodyValidator(CreateCommonExpensePeriodRequest.class));
@@ -488,7 +650,8 @@ public final class WebServer {
 
         javalin.get("/api/visits/my", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            ctx.json(visitService.getVisitsForUser(user));
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            ctx.json(visitService.getVisitsForUser(user, selectedBuildingId));
         });
 
         javalin.get("/api/visits/history", ctx -> {
@@ -543,16 +706,40 @@ public final class WebServer {
 
         javalin.get("/api/incidents/my", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            String buildingIdHeader = ctx.header("X-Building-Id");
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+
+            LOGGER.info(
+                    "GET /api/incidents/my - User: {}, Role: {}, Header X-Building-Id: {}, Validated BuildingId: {}",
+                    user != null ? user.id() : "null",
+                    user != null ? user.roleId() : "null",
+                    buildingIdHeader,
+                    selectedBuildingId);
+
+            // Para administradores y conserjes, el buildingId es obligatorio
+            if ((user.roleId() != null && (user.roleId() == 1L || user.roleId() == 3L)) && selectedBuildingId == null) {
+                LOGGER.warn("Admin/Concierge intentó acceder a incidentes sin buildingId seleccionado. Header: {}",
+                        buildingIdHeader);
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio para ver los incidentes",
+                        HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+
             String from = ctx.queryParam("from");
             String to = ctx.queryParam("to");
-            ctx.json(incidentService.list(user, parseDate(from), parseDate(to)));
+            var result = incidentService.list(user, selectedBuildingId, parseDate(from), parseDate(to));
+            LOGGER.info("Incidentes encontrados - Reported: {}, InProgress: {}, Closed: {}",
+                    result.reported().size(), result.inProgress().size(), result.closed().size());
+            ctx.json(result);
         });
 
         javalin.post("/api/incidents", ctx -> {
             IncidentRequest request = validateIncident(ctx.bodyValidator(IncidentRequest.class));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
             ctx.status(HttpStatus.CREATED);
-            ctx.json(incidentService.create(user, request));
+            ctx.json(incidentService.create(user, selectedBuildingId, request));
         });
 
         javalin.put("/api/incidents/{incidentId}/status", ctx -> {
@@ -1040,6 +1227,49 @@ public final class WebServer {
         if (buildings != null && !buildings.isEmpty()) {
             return buildings.get(0).id();
         }
+        return null;
+    }
+
+    /**
+     * Valida que el usuario tenga acceso al edificio seleccionado.
+     * Verifica acceso por:
+     * 1. Tabla user_buildings (relación directa usuario-edificio)
+     * 2. Unidad del usuario pertenece al edificio (relación
+     * usuario-unidad-edificio)
+     * Si tiene acceso, devuelve el buildingId; si no, devuelve null.
+     */
+    private Long validateSelectedBuilding(Context ctx, User user) {
+        if (user == null) {
+            LOGGER.warn("validateSelectedBuilding: user is null");
+            return null;
+        }
+        Long selectedBuildingId = ctx.attribute("selectedBuildingId");
+        String headerValue = ctx.header("X-Building-Id");
+        if (selectedBuildingId == null) {
+            LOGGER.warn("validateSelectedBuilding: selectedBuildingId is null. Header X-Building-Id: {}, User: {}",
+                    headerValue, user.id());
+            return null;
+        }
+
+        // Verificar acceso directo por tabla user_buildings
+        boolean hasAccess = userBuildingRepository.userHasAccessToBuilding(user.id(), selectedBuildingId);
+        if (hasAccess) {
+            LOGGER.debug("Usuario {} tiene acceso al edificio {} vía user_buildings", user.id(), selectedBuildingId);
+            return selectedBuildingId;
+        }
+
+        // Verificar acceso indirecto por unidad del usuario
+        if (user.unitId() != null) {
+            Long userBuildingId = buildingRepository.findBuildingIdByUnitId(user.unitId());
+            if (selectedBuildingId.equals(userBuildingId)) {
+                LOGGER.debug("Usuario {} tiene acceso al edificio {} vía unidad {}", user.id(), selectedBuildingId,
+                        user.unitId());
+                return selectedBuildingId;
+            }
+        }
+
+        LOGGER.warn("Usuario {} NO tiene acceso al edificio {}. Header X-Building-Id: {}",
+                user.id(), selectedBuildingId, headerValue);
         return null;
     }
 
