@@ -13,6 +13,8 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 public class UserRepository {
@@ -55,6 +57,32 @@ public class UserRepository {
             }
         } catch (SQLException e) {
             throw new RepositoryException("Error updating password", e);
+        }
+    }
+
+    public void updateUnitId(Long userId, Long unitId) {
+        // Verificar que el usuario existe primero
+        Optional<User> userOpt = findById(userId);
+        if (userOpt.isEmpty()) {
+            throw new RepositoryException("Usuario no encontrado con id: " + userId);
+        }
+
+        String sql = "UPDATE users SET unit_id = ? WHERE id = ?";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            if (unitId != null) {
+                statement.setLong(1, unitId);
+            } else {
+                statement.setNull(1, Types.BIGINT);
+            }
+            statement.setLong(2, userId);
+            int updated = statement.executeUpdate();
+            if (updated == 0) {
+                throw new RepositoryException(
+                        "No se pudo actualizar el usuario. El usuario podría no existir o no haber cambios.");
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error updating user unit_id: " + e.getMessage(), e);
         }
     }
 
@@ -133,6 +161,75 @@ public class UserRepository {
         } catch (SQLException e) {
             throw new RepositoryException("Error saving user", e);
         }
+    }
+
+    /**
+     * Encuentra todos los usuarios de un edificio, incluyendo información de su
+     * unidad.
+     * Incluye usuarios vinculados al edificio vía user_buildings, incluso si no
+     * tienen unidad asignada.
+     * Ordena por número de unidad y luego por nombre.
+     */
+    public List<ResidentWithUnit> findResidentsByBuilding(Long buildingId) {
+        String sql = """
+                SELECT DISTINCT u.id, u.unit_id, u.role_id, u.first_name, u.last_name, u.email, u.phone,
+                       u.document_number, u.resident, u.created_at, u.status,
+                       hu.number AS unit_number, hu.tower, hu.floor
+                FROM users u
+                INNER JOIN user_buildings ub ON ub.user_id = u.id AND ub.building_id = ?
+                LEFT JOIN housing_units hu ON hu.id = u.unit_id AND hu.building_id = ?
+                WHERE u.status = 'ACTIVE'
+                ORDER BY hu.floor, hu.number, u.first_name, u.last_name
+                """;
+        List<ResidentWithUnit> residents = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, buildingId);
+            statement.setLong(2, buildingId);
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    residents.add(mapResidentWithUnit(rs));
+                }
+            }
+            return residents;
+        } catch (SQLException e) {
+            throw new RepositoryException("Error fetching residents by building", e);
+        }
+    }
+
+    private ResidentWithUnit mapResidentWithUnit(ResultSet rs) throws SQLException {
+        return new ResidentWithUnit(
+                rs.getLong("id"),
+                (Long) rs.getObject("unit_id"),
+                (Long) rs.getObject("role_id"),
+                rs.getString("first_name"),
+                rs.getString("last_name"),
+                rs.getString("email"),
+                rs.getString("phone"),
+                rs.getString("document_number"),
+                rs.getBoolean("resident"),
+                rs.getTimestamp("created_at") != null ? rs.getTimestamp("created_at").toLocalDateTime() : null,
+                rs.getString("status"),
+                rs.getString("unit_number"),
+                rs.getString("tower"),
+                rs.getString("floor"));
+    }
+
+    public record ResidentWithUnit(
+            Long id,
+            Long unitId,
+            Long roleId,
+            String firstName,
+            String lastName,
+            String email,
+            String phone,
+            String documentNumber,
+            Boolean resident,
+            java.time.LocalDateTime createdAt,
+            String status,
+            String unitNumber,
+            String tower,
+            String floor) {
     }
 
     private User mapRow(ResultSet resultSet) throws SQLException {
