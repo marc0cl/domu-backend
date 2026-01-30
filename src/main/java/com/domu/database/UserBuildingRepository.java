@@ -30,7 +30,7 @@ public class UserBuildingRepository {
                 """;
         List<BuildingSummaryResponse> buildings = new ArrayList<>();
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, userId);
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
@@ -39,8 +39,7 @@ public class UserBuildingRepository {
                             rs.getString("name"),
                             rs.getString("address"),
                             rs.getString("commune"),
-                            rs.getString("city")
-                    ));
+                            rs.getString("city")));
                 }
             }
             return buildings;
@@ -55,7 +54,7 @@ public class UserBuildingRepository {
                 VALUES (?, ?)
                 """;
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, userId);
             statement.setLong(2, buildingId);
             statement.executeUpdate();
@@ -63,5 +62,28 @@ public class UserBuildingRepository {
             throw new RepositoryException("Error vinculando usuario a edificio", e);
         }
     }
-}
 
+    /**
+     * Verifica si un usuario tiene acceso a un edificio específico.
+     */
+    public boolean userHasAccessToBuilding(Long userId, Long buildingId) {
+        if (userId == null || buildingId == null) {
+            return false;
+        }
+        String sql = """
+                SELECT 1 FROM user_buildings
+                WHERE user_id = ? AND building_id = ?
+                LIMIT 1
+                """;
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, userId);
+            statement.setLong(2, buildingId);
+            try (ResultSet rs = statement.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error verificando acceso a edificio", e);
+        }
+    }
+}

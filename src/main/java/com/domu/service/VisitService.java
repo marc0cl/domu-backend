@@ -50,20 +50,19 @@ public class VisitService {
                 normalizedDocument,
                 visitorType,
                 request.getCompany(),
-                now
-        ));
+                now));
 
-        VisitRepository.VisitAuthorizationRow authorization = visitRepository.insertAuthorization(new VisitRepository.VisitAuthorizationRow(
-                null,
-                visit.id(),
-                user.id(),
-                unitId,
-                validFrom,
-                validUntil,
-                "SCHEDULED",
-                null,
-                now
-        ));
+        VisitRepository.VisitAuthorizationRow authorization = visitRepository
+                .insertAuthorization(new VisitRepository.VisitAuthorizationRow(
+                        null,
+                        visit.id(),
+                        user.id(),
+                        unitId,
+                        validFrom,
+                        validUntil,
+                        "SCHEDULED",
+                        null,
+                        now));
 
         VisitRepository.VisitSummaryRow summary = new VisitRepository.VisitSummaryRow(
                 authorization.id(),
@@ -77,20 +76,29 @@ public class VisitService {
                 validUntil,
                 authorization.status(),
                 authorization.createdAt(),
-                null
-        );
+                null);
 
         return toResponse(summary, deriveStatus(summary, now));
     }
 
-    public VisitListResponse getVisitsForUser(User user) {
+    /**
+     * Lista visitas para el usuario.
+     * Si el usuario es admin/concierge y se proporciona buildingId, muestra todas
+     * las visitas del edificio.
+     */
+    public VisitListResponse getVisitsForUser(User user, Long buildingId) {
         List<VisitRepository.VisitSummaryRow> rows;
         if (isResident(user)) {
             ensureResidentWithUnit(user);
             rows = visitRepository.findAuthorizationsForResident(user.id());
         } else if (isConcierge(user) || isAdmin(user)) {
-            // Para conserjes/admins, mostramos las que ellos registraron
-            rows = visitRepository.findAuthorizationsForResident(user.id());
+            // Para conserjes/admins, si hay buildingId, mostrar todas las del edificio
+            if (buildingId != null) {
+                rows = visitRepository.findAuthorizationsForBuilding(buildingId);
+            } else {
+                // Si no hay buildingId, mostrar las que ellos registraron
+                rows = visitRepository.findAuthorizationsForResident(user.id());
+            }
         } else {
             throw new UnauthorizedResponse("No tienes permiso para ver visitas");
         }
@@ -130,6 +138,7 @@ public class VisitService {
         }
         return history;
     }
+
     public VisitResponse registerCheckIn(Long authorizationId, User user) {
         VisitRepository.VisitSummaryRow existing;
         if (isResident(user)) {
@@ -159,8 +168,7 @@ public class VisitService {
                 "MAIN_DOOR",
                 user.id(),
                 "CHECK_IN",
-                now
-        ));
+                now));
         visitRepository.updateAuthorizationStatus(existing.authorizationId(), "CHECKED_IN");
 
         VisitRepository.VisitSummaryRow updated = new VisitRepository.VisitSummaryRow(
@@ -175,8 +183,7 @@ public class VisitService {
                 existing.validUntil(),
                 "CHECKED_IN",
                 existing.createdAt(),
-                now
-        );
+                now);
 
         return toResponse(updated, "CHECKED_IN");
     }
@@ -269,8 +276,6 @@ public class VisitService {
                 row.validUntil(),
                 status,
                 row.createdAt(),
-                row.checkInAt()
-        );
+                row.checkInAt());
     }
 }
-

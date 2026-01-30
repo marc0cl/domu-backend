@@ -34,7 +34,8 @@ public class BuildingService {
     private final com.domu.config.AppConfig config;
 
     @Inject
-    public BuildingService(BuildingRepository repository, CommunityRegistrationStorageService storageService, EmailService emailService, UserService userService, com.domu.config.AppConfig config) {
+    public BuildingService(BuildingRepository repository, CommunityRegistrationStorageService storageService,
+            EmailService emailService, UserService userService, com.domu.config.AppConfig config) {
         this.repository = repository;
         this.storageService = storageService;
         this.emailService = emailService;
@@ -42,7 +43,8 @@ public class BuildingService {
         this.config = config;
     }
 
-    public BuildingRequestResponse createRequest(CreateBuildingRequest request, User user, CommunityRegistrationDocument document) {
+    public BuildingRequestResponse createRequest(CreateBuildingRequest request, User user,
+            CommunityRegistrationDocument document) {
         validateCreate(request);
         Long requesterId = user != null ? user.id() : null;
         String approvalCode = java.util.UUID.randomUUID().toString();
@@ -79,10 +81,11 @@ public class BuildingService {
                 null,
                 null,
                 null,
-                null
-        ));
-        var uploadResult = storageService.uploadCommunityDocument(saved.id(), request.getName(), request.getCommune(), document);
-        repository.updateBoxMetadata(saved.id(), uploadResult.requestFolderId(), uploadResult.fileId(), uploadResult.fileName());
+                null));
+        var uploadResult = storageService.uploadCommunityDocument(saved.id(), request.getName(), request.getCommune(),
+                document);
+        repository.updateBoxMetadata(saved.id(), uploadResult.requestFolderId(), uploadResult.fileId(),
+                uploadResult.fileName());
 
         CompletableFuture.runAsync(() -> sendApprovalPreview(request, saved.id(), document, approvalCode));
         CompletableFuture.runAsync(() -> sendUserConfirmation(request, document));
@@ -95,8 +98,7 @@ public class BuildingService {
                 saved.reviewNotes(),
                 uploadResult.requestFolderId(),
                 uploadResult.fileId(),
-                uploadResult.fileName()
-        );
+                uploadResult.fileName());
     }
 
     public BuildingRequestResponse approve(Long requestId, ApproveBuildingRequest approveRequest, User reviewer) {
@@ -110,7 +112,8 @@ public class BuildingService {
         }
 
         Long buildingId = repository.insertBuildingFromRequest(request, request.requestedByUserId());
-        repository.approveRequest(requestId, reviewer.id(), approveRequest != null ? approveRequest.getReviewNotes() : null, buildingId);
+        repository.approveRequest(requestId, reviewer.id(),
+                approveRequest != null ? approveRequest.getReviewNotes() : null, buildingId);
         if (request.boxFolderId() != null) {
             try {
                 storageService.moveRequestToApproved(request.boxFolderId(), request.commune());
@@ -130,8 +133,7 @@ public class BuildingService {
                 approveRequest != null ? approveRequest.getReviewNotes() : null,
                 request.boxFolderId(),
                 request.boxFileId(),
-                request.boxFileName()
-        );
+                request.boxFileName());
     }
 
     public BuildingRequest validateApprovalLink(String approvalCode) {
@@ -186,7 +188,8 @@ public class BuildingService {
         }
     }
 
-    private void sendApprovalPreview(CreateBuildingRequest request, Long requestId, CommunityRegistrationDocument document, String approvalCode) {
+    private void sendApprovalPreview(CreateBuildingRequest request, Long requestId,
+            CommunityRegistrationDocument document, String approvalCode) {
         try {
             String baseUrl = config.approvalBaseUrl() != null && !config.approvalBaseUrl().isBlank()
                     ? config.approvalBaseUrl()
@@ -200,16 +203,17 @@ public class BuildingService {
                     "address", request.getAddress(),
                     "approvalCode", approvalCode,
                     "approveUrl", approveUrl,
-                    "rejectUrl", rejectUrl
-            ));
+                    "rejectUrl", rejectUrl));
             String to = (config.approvalsRecipient() != null && !config.approvalsRecipient().isBlank())
                     ? config.approvalsRecipient()
                     : request.getAdminEmail();
             String subject = "Solicitud de comunidad - " + request.getName();
-            emailService.sendHtmlWithAttachment(to, subject, html, document.fileName(), document.contentType(), document.content());
+            emailService.sendHtmlWithAttachment(to, subject, html, document.fileName(), document.contentType(),
+                    document.content());
             LOGGER.info("Correo de aprobación listo para solicitud {}. Destinatario: {}", requestId, to);
         } catch (Exception e) {
-            LOGGER.warn("No se pudo generar el correo de aprobación para la solicitud {}: {}", requestId, e.getMessage());
+            LOGGER.warn("No se pudo generar el correo de aprobación para la solicitud {}: {}", requestId,
+                    e.getMessage());
         }
     }
 
@@ -224,8 +228,7 @@ public class BuildingService {
                     "communityName", request.getName(),
                     "adminName", request.getAdminName(),
                     "location", location,
-                    "fileName", document.fileName()
-            ));
+                    "fileName", document.fileName()));
             String subject = "Recibimos tu solicitud para " + request.getName();
             emailService.sendHtml(request.getAdminEmail(), subject, html);
             LOGGER.info("Correo de confirmación enviado a {}", request.getAdminEmail());
@@ -315,7 +318,12 @@ public class BuildingService {
         return new NameParts(first, last);
     }
 
-    private record NameParts(String firstName, String lastName) { }
+    private record NameParts(String firstName, String lastName) {
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
 
     private String buildAndPersistAdminInvite(BuildingRequest request, Long buildingId) {
         if (buildingId == null || request.adminEmail() == null || request.adminEmail().isBlank()) {
@@ -326,7 +334,7 @@ public class BuildingService {
         repository.updateAdminInvite(request.id(), code, expiresAt);
         String baseUrl = config.approvalBaseUrl() != null && !config.approvalBaseUrl().isBlank()
                 ? config.approvalBaseUrl()
-                : "https://domu.app";
+                : "http://localhost:5173";
         return baseUrl + "/registrar-admin?code=" + code;
     }
 
@@ -334,21 +342,58 @@ public class BuildingService {
         return fetchValidAdminInvite(inviteCode);
     }
 
+    public com.domu.dto.AdminInviteInfoResponse getAdminInviteInfo(String inviteCode) {
+        BuildingRequest request = fetchValidAdminInvite(inviteCode);
+        NameParts nameParts = splitName(request.adminName());
+        return new com.domu.dto.AdminInviteInfoResponse(
+                request.name(),
+                request.adminEmail(),
+                nameParts.firstName(),
+                nameParts.lastName(),
+                request.adminPhone(),
+                request.adminDocument());
+    }
+
     public void registerAdminFromInvite(String inviteCode, String rawPassword) {
+        registerAdminFromInvite(inviteCode, null, null, null, null, rawPassword);
+    }
+
+    public void registerAdminFromInvite(
+            String inviteCode,
+            String firstName,
+            String lastName,
+            String phone,
+            String documentNumber,
+            String rawPassword) {
         if (rawPassword == null || rawPassword.isBlank()) {
             throw new ValidationException("La contraseña es obligatoria");
         }
         BuildingRequest request = fetchValidAdminInvite(inviteCode);
         NameParts nameParts = splitName(request.adminName());
-        userService.createAdminForBuilding(
+
+        String resolvedFirstName = isBlank(firstName) ? nameParts.firstName() : firstName.trim();
+        String resolvedLastName = isBlank(lastName) ? nameParts.lastName() : lastName.trim();
+        String resolvedPhone = isBlank(phone) ? request.adminPhone() : phone.trim();
+        String resolvedDocument = isBlank(documentNumber) ? request.adminDocument() : documentNumber.trim();
+
+        if (isBlank(resolvedFirstName) || isBlank(resolvedLastName)) {
+            throw new ValidationException("Debes ingresar nombre y apellido");
+        }
+        if (isBlank(resolvedPhone)) {
+            throw new ValidationException("Debes ingresar un teléfono de contacto");
+        }
+        if (isBlank(resolvedDocument)) {
+            throw new ValidationException("Debes ingresar un documento de identidad");
+        }
+
+        userService.ensureAdminForBuilding(
                 request.adminEmail(),
-                request.adminPhone() != null ? request.adminPhone() : "",
-                request.adminDocument() != null ? request.adminDocument() : "N/A",
-                nameParts.firstName(),
-                nameParts.lastName(),
+                resolvedPhone,
+                resolvedDocument,
+                resolvedFirstName,
+                resolvedLastName,
                 rawPassword,
-                request.buildingId()
-        );
+                request.buildingId());
         repository.markAdminInviteUsed(request.id());
     }
 
@@ -364,8 +409,7 @@ public class BuildingService {
                     "adminName", request.adminName(),
                     "location", location,
                     "fileName", request.boxFileName() != null ? request.boxFileName() : "documento.pdf",
-                    "adminInviteUrl", adminInviteUrl != null ? adminInviteUrl : ""
-            ));
+                    "adminInviteUrl", adminInviteUrl != null ? adminInviteUrl : ""));
             String subject = "Solicitud aprobada - " + request.name();
             emailService.sendHtml(request.adminEmail(), subject, html);
             LOGGER.info("Correo de aprobación enviado a {}", request.adminEmail());
@@ -385,8 +429,7 @@ public class BuildingService {
                     "communityName", request.name(),
                     "adminName", request.adminName(),
                     "location", location,
-                    "reason", escapeHtml(reason)
-            ));
+                    "reason", escapeHtml(reason)));
             String subject = "Solicitud rechazada - " + request.name();
             emailService.sendHtml(request.adminEmail(), subject, html);
             LOGGER.info("Correo de rechazo enviado a {}", request.adminEmail());
@@ -395,4 +438,3 @@ public class BuildingService {
         }
     }
 }
-
