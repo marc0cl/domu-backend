@@ -15,10 +15,14 @@ import com.google.inject.Provides;
 import com.google.inject.Scopes;
 import com.google.inject.Singleton;
 import com.zaxxer.hikari.HikariDataSource;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
+import javax.sql.DataSource;
 
 public class DependencyInjectionModule extends AbstractModule {
 
@@ -75,6 +79,20 @@ public class DependencyInjectionModule extends AbstractModule {
     @Singleton
     HikariDataSource dataSource(final AppConfig config) {
         return DataSourceFactory.create(config);
+    }
+
+    @Provides
+    @Singleton
+    DataSource pooledDataSource(final HikariDataSource hikariDataSource) {
+        return hikariDataSource;
+    }
+
+    @Provides
+    @Singleton
+    ObjectMapper objectMapper() {
+        return new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     }
 
     @Provides

@@ -92,6 +92,43 @@ El servidor levanta en `http://localhost:7000` (o el puerto definido en `APP_SER
 - `GET /api/users/me`: requiere header `Authorization: Bearer <token>` y devuelve la información del usuario autenticado.
 - `GET /health`: verificación rápida de disponibilidad.
 
+### Ejemplos de curl para autenticación
+
+Registra un usuario de prueba (ajusta los campos según tu caso):
+
+```bash
+curl -X POST http://localhost:7000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "unitId": 1,
+    "roleId": 2,
+    "firstName": "Juan",
+    "lastName": "Pérez",
+    "birthDate": "1995-08-20",
+    "email": "juan.perez@example.com",
+    "phone": "+56 9 5555 1234",
+    "documentNumber": "12.345.678-9",
+    "resident": true,
+    "password": "UnaClaveMuySegura123!"
+  }'
+```
+
+Autentica al usuario y almacena el JWT en una variable `TOKEN` (requiere `jq` instalado):
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:7000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "juan.perez@example.com", "password": "UnaClaveMuySegura123!"}' | jq -r '.token')
+echo "Token: $TOKEN"
+```
+
+Consulta los datos del usuario autenticado usando el token obtenido:
+
+```bash
+curl http://localhost:7000/api/users/me \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ## Pruebas
 
 Ejecuta la suite de pruebas con:
