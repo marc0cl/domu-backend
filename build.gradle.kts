@@ -35,6 +35,7 @@ dependencies {
     implementation(libs.guice)
     implementation(libs.boxSdk)
     implementation("com.sun.mail:jakarta.mail:2.0.1")
+    implementation("com.github.librepdf:openpdf:1.3.39")
     
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)

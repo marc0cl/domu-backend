@@ -1,16 +1,26 @@
 package com.domu.service;
 
 import com.domu.database.CommonExpenseRepository;
+import com.domu.database.HousingUnitRepository;
+import com.domu.domain.core.HousingUnit;
 import com.domu.domain.core.User;
 import com.domu.domain.finance.CommonCharge;
 import com.domu.domain.finance.CommonExpensePeriod;
 import com.domu.domain.finance.CommonPayment;
 import com.domu.dto.AddCommonChargesRequest;
+import com.domu.dto.BuildingSummaryResponse;
+import com.domu.dto.CommonChargeReceiptUploadResult;
+import com.domu.dto.CommonChargeDetailResponse;
+import com.domu.dto.CommonExpenseReceiptDocument;
+import com.domu.dto.CommonExpensePeriodDetailResponse;
 import com.domu.dto.CommonExpensePeriodResponse;
+import com.domu.dto.CommonExpensePeriodSummaryResponse;
+import com.domu.dto.CommonExpenseRevisionResponse;
 import com.domu.dto.CommonPaymentRequest;
 import com.domu.dto.CommonPaymentResponse;
 import com.domu.dto.CreateCommonChargeRequest;
 import com.domu.dto.CreateCommonExpensePeriodRequest;
+import com.domu.dto.UnitCommonExpenseSummaryResponse;
 import com.domu.dto.UnitChargeResponse;
 import com.google.inject.Inject;
 
@@ -26,15 +36,21 @@ import java.util.Objects;
 public class CommonExpenseService {
 
     private final CommonExpenseRepository repository;
+    private final HousingUnitRepository housingUnitRepository;
+    private final CommonExpenseReceiptStorageService receiptStorageService;
 
     @Inject
-    public CommonExpenseService(CommonExpenseRepository repository) {
+    public CommonExpenseService(CommonExpenseRepository repository,
+                                HousingUnitRepository housingUnitRepository,
+                                CommonExpenseReceiptStorageService receiptStorageService) {
         this.repository = repository;
+        this.housingUnitRepository = housingUnitRepository;
+        this.receiptStorageService = receiptStorageService;
     }
 
-    public CommonExpensePeriodResponse createPeriod(CreateCommonExpensePeriodRequest request) {
+    public CommonExpensePeriodResponse createPeriod(CreateCommonExpensePeriodRequest request, User user, Long buildingId) {
         validatePeriodRequest(request);
-        List<CommonExpenseRepository.UnitShare> units = repository.findUnitsForBuilding(request.getBuildingId());
+        List<CommonExpenseRepository.UnitShare> units = repository.findUnitsForBuilding(buildingId);
         if (units.isEmpty()) {
             throw new ValidationException("El edificio no tiene unidades registradas para prorratear");
         }
@@ -43,7 +59,7 @@ public class CommonExpenseService {
         LocalDate generatedAt = LocalDate.now();
         CommonExpensePeriod period = repository.insertPeriod(new CommonExpensePeriod(
                 null,
-                request.getBuildingId(),
+                buildingId,
                 request.getYear(),
                 request.getMonth(),
                 generatedAt,
@@ -51,14 +67,16 @@ public class CommonExpenseService {
                 reserveAmount,
                 BigDecimal.ZERO,
                 "OPEN"
-        ));
+        ), user != null ? user.id() : null);
 
         List<CommonCharge> charges = buildChargesForPeriod(period.id(), request.getCharges(), reserveAmount, units);
         List<CommonCharge> savedCharges = repository.insertCharges(charges);
         BigDecimal total = savedCharges.stream()
                 .map(CommonCharge::amount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        repository.updatePeriodTotals(period.id(), total, reserveAmount);
+        repository.updatePeriodTotals(period.id(), total, reserveAmount, user != null ? user.id() : null);
+        repository.insertRevision(period.id(), user != null ? user.id() : null, "CREATED",
+                request.getNote(), "charges=" + savedCharges.size());
 
         return new CommonExpensePeriodResponse(
                 period.id(),
@@ -73,12 +91,16 @@ public class CommonExpenseService {
         );
     }
 
-    public CommonExpensePeriodResponse addCharges(Long periodId, AddCommonChargesRequest request) {
+    public CommonExpensePeriodResponse addCharges(Long periodId, AddCommonChargesRequest request, User user,
+                                                  Long buildingId) {
         if (request == null || request.getCharges() == null || request.getCharges().isEmpty()) {
             throw new ValidationException("Debes incluir al menos un cargo");
         }
         CommonExpensePeriod period = repository.findPeriodById(periodId)
                 .orElseThrow(() -> new ValidationException("Período no encontrado"));
+        if (buildingId != null && !Objects.equals(period.buildingId(), buildingId)) {
+            throw new ValidationException("El período no pertenece al edificio seleccionado");
+        }
         List<CommonExpenseRepository.UnitShare> units = repository.findUnitsForBuilding(period.buildingId());
         if (units.isEmpty()) {
             throw new ValidationException("El edificio no tiene unidades registradas para prorratear");
@@ -90,7 +112,9 @@ public class CommonExpenseService {
                 .map(CommonCharge::amount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal newTotal = period.totalAmount().add(added);
-        repository.updatePeriodTotals(period.id(), newTotal, period.reserveAmount());
+        repository.updatePeriodTotals(period.id(), newTotal, period.reserveAmount(), user != null ? user.id() : null);
+        repository.insertRevision(period.id(), user != null ? user.id() : null, "UPDATED",
+                request.getNote(), "charges_added=" + saved.size());
 
         return new CommonExpensePeriodResponse(
                 period.id(),
@@ -102,6 +126,125 @@ public class CommonExpenseService {
                 newTotal,
                 period.status(),
                 saved.size()
+        );
+    }
+
+    public List<CommonExpensePeriodSummaryResponse> listPeriodsForBuilding(Long buildingId, Integer fromIndex,
+                                                                          Integer toIndex) {
+        List<CommonExpenseRepository.PeriodSummaryRow> rows = repository.findPeriodSummaries(buildingId, fromIndex,
+                toIndex);
+        return rows.stream()
+                .map(row -> new CommonExpensePeriodSummaryResponse(
+                        row.periodId(),
+                        row.year(),
+                        row.month(),
+                        row.dueDate(),
+                        row.reserveAmount(),
+                        row.totalAmount(),
+                        row.status(),
+                        row.chargesCount(),
+                        row.revisionsCount(),
+                        row.lastRevisionAt()
+                ))
+                .toList();
+    }
+
+    public List<UnitCommonExpenseSummaryResponse> listPeriodsForUser(User user, Long buildingId, Integer fromIndex,
+                                                                     Integer toIndex) {
+        if (user == null || user.unitId() == null) {
+            throw new ValidationException("El usuario no tiene unidad asociada");
+        }
+        List<CommonExpenseRepository.UnitPeriodSummaryRow> rows = repository.findUnitPeriodSummaries(
+                user.unitId(), buildingId, fromIndex, toIndex);
+        return rows.stream()
+                .map(row -> {
+                    BigDecimal paid = row.paidAmount() != null ? row.paidAmount() : BigDecimal.ZERO;
+                    BigDecimal total = row.totalAmount() != null ? row.totalAmount() : BigDecimal.ZERO;
+                    BigDecimal pending = total.subtract(paid);
+                    String status = pending.compareTo(BigDecimal.ZERO) <= 0
+                            ? "PAID"
+                            : paid.compareTo(BigDecimal.ZERO) > 0 ? "PARTIAL" : "PENDING";
+                    return new UnitCommonExpenseSummaryResponse(
+                            row.periodId(),
+                            row.year(),
+                            row.month(),
+                            row.dueDate(),
+                            total,
+                            paid,
+                            pending,
+                            status
+                    );
+                })
+                .toList();
+    }
+
+    public CommonExpensePeriodDetailResponse getPeriodDetailForUser(User user, Long buildingId, Long periodId,
+                                                                    BuildingSummaryResponse building,
+                                                                    HousingUnit unit) {
+        if (user == null || user.unitId() == null) {
+            throw new ValidationException("El usuario no tiene unidad asociada");
+        }
+        if (!repository.periodBelongsToBuilding(periodId, buildingId)) {
+            throw new ValidationException("El período no pertenece al edificio seleccionado");
+        }
+        List<CommonExpenseRepository.ChargeBalanceRow> rows = repository.findChargesForUnitAndPeriod(unit.id(),
+                periodId);
+        List<CommonChargeDetailResponse> charges = rows.stream()
+                .filter(row -> !"CONSTRUCTION".equalsIgnoreCase(row.charge().payerType()))
+                .map(row -> new CommonChargeDetailResponse(
+                        row.charge().id(),
+                        row.charge().description(),
+                        row.charge().type(),
+                        row.charge().origin(),
+                        row.charge().amount(),
+                        row.charge().prorateable(),
+                        row.charge().receiptFileName(),
+                        row.charge().receiptFileId() != null && !row.charge().receiptFileId().isBlank()
+                ))
+                .toList();
+
+        BigDecimal unitTotal = rows.stream()
+                .filter(row -> !"CONSTRUCTION".equalsIgnoreCase(row.charge().payerType()))
+                .map(row -> row.charge().amount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal unitPaid = rows.stream()
+                .filter(row -> !"CONSTRUCTION".equalsIgnoreCase(row.charge().payerType()))
+                .map(row -> row.paidAmount() != null ? row.paidAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal unitPending = unitTotal.subtract(unitPaid);
+
+        CommonExpensePeriod period = repository.findPeriodById(periodId)
+                .orElseThrow(() -> new ValidationException("Período no encontrado"));
+        List<CommonExpenseRevisionResponse> revisions = repository.findRevisions(periodId).stream()
+                .map(rev -> new CommonExpenseRevisionResponse(
+                        rev.id(),
+                        rev.action(),
+                        rev.note(),
+                        rev.createdByUserId(),
+                        rev.createdAt()
+                ))
+                .toList();
+
+        String unitLabel = buildUnitLabel(unit);
+
+        return new CommonExpensePeriodDetailResponse(
+                period.id(),
+                period.year(),
+                period.month(),
+                period.dueDate(),
+                period.reserveAmount(),
+                period.totalAmount(),
+                period.status(),
+                unitTotal,
+                unitPaid,
+                unitPending,
+                building != null ? building.name() : null,
+                building != null ? building.address() : null,
+                building != null ? building.commune() : null,
+                building != null ? building.city() : null,
+                unitLabel,
+                charges,
+                revisions
         );
     }
 
@@ -168,6 +311,61 @@ public class CommonExpenseService {
         return new CommonPaymentResponse(saved.chargeId(), newPending, List.of(line));
     }
 
+    public CommonChargeReceiptUploadResult uploadChargeReceipt(Long chargeId,
+                                                               User user,
+                                                               Long buildingId,
+                                                               BuildingSummaryResponse building,
+                                                               CommonExpenseReceiptDocument document) {
+        ensureAdmin(user);
+        CommonExpenseRepository.ChargeContextRow context = repository.findChargeContext(chargeId)
+                .orElseThrow(() -> new ValidationException("Cargo no encontrado"));
+        if (buildingId != null && !Objects.equals(context.buildingId(), buildingId)) {
+            throw new ValidationException("El cargo no pertenece al edificio seleccionado");
+        }
+        HousingUnit unit = null;
+        if (context.charge().unitId() != null) {
+            unit = housingUnitRepository.findById(context.charge().unitId()).orElse(null);
+        }
+        CommonChargeReceiptUploadResult uploaded = receiptStorageService.uploadReceipt(
+                building,
+                unit,
+                context.year(),
+                context.month(),
+                chargeId,
+                context.charge().description(),
+                document
+        );
+        repository.updateChargeReceipt(chargeId, new CommonExpenseRepository.ReceiptMetadata(
+                uploaded.fileId(),
+                uploaded.fileName(),
+                uploaded.folderId(),
+                uploaded.mimeType()
+        ));
+        repository.insertRevision(context.charge().periodId(), user != null ? user.id() : null, "RECEIPT_UPLOADED",
+                "Boleta adjunta", "chargeId=" + chargeId);
+        return uploaded;
+    }
+
+    public CommonExpenseReceiptStorageService.DownloadedReceipt downloadReceipt(Long chargeId, User user,
+                                                                                Long buildingId) {
+        CommonExpenseRepository.ChargeContextRow context = repository.findChargeContext(chargeId)
+                .orElseThrow(() -> new ValidationException("Cargo no encontrado"));
+        if (user != null && user.roleId() != null && user.roleId() == 1L) {
+            if (buildingId != null && !Objects.equals(context.buildingId(), buildingId)) {
+                throw new UnauthorizedResponse("No puedes acceder a boletas de otro edificio");
+            }
+        } else {
+            if (user == null || user.unitId() == null ||
+                    !Objects.equals(context.charge().unitId(), user.unitId())) {
+                throw new UnauthorizedResponse("No puedes acceder a boletas de otra unidad");
+            }
+        }
+        if (context.charge().receiptFileId() == null || context.charge().receiptFileId().isBlank()) {
+            throw new ValidationException("No hay boleta registrada para este cargo");
+        }
+        return receiptStorageService.downloadReceipt(context.charge().receiptFileId());
+    }
+
     private List<CommonCharge> buildChargesForPeriod(
             Long periodId,
             List<CreateCommonChargeRequest> chargeRequests,
@@ -177,7 +375,8 @@ public class CommonExpenseService {
         List<CommonCharge> charges = new ArrayList<>();
         BigDecimal reserve = reserveAmount != null ? reserveAmount : BigDecimal.ZERO;
         if (reserve.compareTo(BigDecimal.ZERO) > 0) {
-            charges.addAll(prorateCharge(periodId, "Fondo de reserva", reserve, "RESERVE", true, null, units));
+            charges.addAll(prorateCharge(periodId, "Fondo de reserva", "Fondo de reserva", reserve, "RESERVE",
+                    true, null, units));
         }
         if (chargeRequests != null) {
             for (CreateCommonChargeRequest req : chargeRequests) {
@@ -195,7 +394,8 @@ public class CommonExpenseService {
         validateChargeRequest(request);
         BigDecimal amount = normalizeAmount(request.getAmount());
         if (Boolean.TRUE.equals(request.getProrateable())) {
-            return prorateCharge(periodId, request.getDescription(), amount, request.getType(), true, request.getReceiptText(), units);
+            return prorateCharge(periodId, request.getDescription(), request.getOrigin(), amount, request.getType(), true,
+                    request.getReceiptText(), units);
         }
 
         Long unitId = request.getUnitId();
@@ -216,15 +416,22 @@ public class CommonExpenseService {
                 request.getDescription().trim(),
                 amount,
                 request.getType(),
+                request.getOrigin(),
                 false,
                 payerType,
-                request.getReceiptText()
+                request.getReceiptText(),
+                null,
+                null,
+                null,
+                null,
+                null
         ));
     }
 
     private List<CommonCharge> prorateCharge(
             Long periodId,
             String description,
+            String origin,
             BigDecimal amount,
             String type,
             boolean prorateable,
@@ -256,9 +463,15 @@ public class CommonExpenseService {
                     description.trim(),
                     share,
                     type,
+                    origin,
                     prorateable,
                     payerType,
-                    receiptText
+                    receiptText,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
             ));
         }
         return charges;
@@ -307,6 +520,24 @@ public class CommonExpenseService {
         return raw.setScale(2, RoundingMode.HALF_UP);
     }
 
+    private String buildUnitLabel(HousingUnit unit) {
+        if (unit == null) {
+            return null;
+        }
+        String number = unit.number() != null ? unit.number().trim() : "";
+        String tower = unit.tower() != null && !unit.tower().isBlank() ? unit.tower().trim() : "";
+        String floor = unit.floor() != null && !unit.floor().isBlank() ? unit.floor().trim() : "";
+        StringBuilder label = new StringBuilder();
+        if (!tower.isEmpty()) {
+            label.append("Torre ").append(tower).append(" ");
+        }
+        label.append("Depto ").append(number);
+        if (!floor.isEmpty()) {
+            label.append(" - Piso ").append(floor);
+        }
+        return label.toString().trim();
+    }
+
     private UnitChargeResponse toUnitChargeResponse(CommonExpenseRepository.ChargeBalanceRow row) {
         BigDecimal paid = row.paidAmount() != null ? row.paidAmount() : BigDecimal.ZERO;
         BigDecimal pending = row.charge().amount().subtract(paid);
@@ -330,5 +561,10 @@ public class CommonExpenseService {
                 row.charge().receiptText()
         );
     }
-}
 
+    private void ensureAdmin(User user) {
+        if (user == null || user.roleId() == null || user.roleId() != 1L) {
+            throw new UnauthorizedResponse("Solo administradores pueden realizar esta acción");
+        }
+    }
+}
