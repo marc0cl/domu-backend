@@ -14,5 +14,5 @@ public class CreateCommonExpensePeriodRequest {
     private LocalDate dueDate;
     private BigDecimal reserveAmount;
     private List<CreateCommonChargeRequest> charges;
+    private String note;
 }
-

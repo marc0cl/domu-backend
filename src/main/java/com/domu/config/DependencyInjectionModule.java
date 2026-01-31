@@ -16,6 +16,8 @@ import com.domu.security.BCryptPasswordHasher;
 import com.domu.security.JwtProvider;
 import com.domu.security.PasswordHasher;
 import com.domu.service.BuildingService;
+import com.domu.service.CommonExpensePdfService;
+import com.domu.service.CommonExpenseReceiptStorageService;
 import com.domu.service.CommonExpenseService;
 import com.domu.service.CommunityRegistrationStorageService;
 import com.domu.service.VisitService;
@@ -58,6 +60,8 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(WebServer.class).in(Scopes.SINGLETON);
         bind(UserService.class).in(Scopes.SINGLETON);
         bind(CommonExpenseService.class).in(Scopes.SINGLETON);
+        bind(CommonExpenseReceiptStorageService.class).in(Scopes.SINGLETON);
+        bind(CommonExpensePdfService.class).in(Scopes.SINGLETON);
         bind(BuildingService.class).in(Scopes.SINGLETON);
         bind(CommunityRegistrationStorageService.class).in(Scopes.SINGLETON);
         bind(VisitService.class).in(Scopes.SINGLETON);

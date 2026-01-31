@@ -10,7 +10,7 @@ public class CreateCommonChargeRequest {
     private String description;
     private BigDecimal amount;
     private String type;
+    private String origin;
     private Boolean prorateable;
     private String receiptText;
 }
-
