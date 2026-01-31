@@ -4,7 +4,7 @@ import org.mindrot.jbcrypt.BCrypt;
 
 public class BCryptPasswordHasher implements PasswordHasher {
 
-    private static final int WORKLOAD = 12;
+    private static final Integer WORKLOAD = 12;
 
     @Override
     public String hash(String rawPassword) {
