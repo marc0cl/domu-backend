@@ -27,10 +27,10 @@ public class BuildingRepository {
         String sql = """
                 INSERT INTO building_requests
                 (requested_by_user_id, name, tower_label, address, commune, city, admin_phone, admin_email, admin_name, admin_document, floors, units_count, latitude, longitude, proof_text, box_folder_id, box_file_id, box_file_name, status, approval_code, approval_code_expires_at, approval_code_used_at, approval_action, admin_invite_code, admin_invite_expires_at, admin_invite_used_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             if (request.requestedByUserId() != null) {
                 statement.setLong(1, request.requestedByUserId());
             } else {
@@ -109,7 +109,7 @@ public class BuildingRepository {
                 WHERE id = ?
                 """;
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, requestId);
             try (ResultSet rs = statement.executeQuery()) {
                 if (rs.next()) {
@@ -133,7 +133,7 @@ public class BuildingRepository {
                 WHERE approval_code = ?
                 """;
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, approvalCode);
             try (ResultSet rs = statement.executeQuery()) {
                 if (rs.next()) {
@@ -157,7 +157,7 @@ public class BuildingRepository {
                 WHERE admin_invite_code = ?
                 """;
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, inviteCode);
             try (ResultSet rs = statement.executeQuery()) {
                 if (rs.next()) {
@@ -179,7 +179,7 @@ public class BuildingRepository {
                 WHERE id = ?
                 """;
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, folderId);
             statement.setString(2, fileId);
             statement.setString(3, fileName);
@@ -199,7 +199,7 @@ public class BuildingRepository {
                 WHERE id = ?
                 """;
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, inviteCode);
             if (expiresAt != null) {
                 statement.setTimestamp(2, Timestamp.valueOf(expiresAt));
@@ -219,7 +219,7 @@ public class BuildingRepository {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
                 """;
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             Long resolvedOwnerId = resolveOwnerUserId(connection, ownerUserId);
             statement.setString(1, request.name());
             statement.setString(2, request.address());
@@ -294,7 +294,7 @@ public class BuildingRepository {
                 WHERE id = ? AND status = 'PENDING'
                 """;
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, reviewerUserId);
             statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
             statement.setString(3, reviewNotes);
@@ -326,7 +326,7 @@ public class BuildingRepository {
                 WHERE id = ? AND status = 'PENDING' AND approval_code_used_at IS NULL
                 """;
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setTimestamp(1, Timestamp.valueOf(LocalDateTime.now()));
             statement.setString(2, reviewNotes);
             if (buildingId != null) {
@@ -357,7 +357,7 @@ public class BuildingRepository {
                 WHERE id = ? AND status = 'PENDING' AND approval_code_used_at IS NULL
                 """;
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setTimestamp(1, Timestamp.valueOf(LocalDateTime.now()));
             statement.setString(2, reviewNotes);
             statement.setTimestamp(3, Timestamp.valueOf(LocalDateTime.now()));
@@ -378,7 +378,7 @@ public class BuildingRepository {
                 WHERE id = ?
                 """;
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setTimestamp(1, Timestamp.valueOf(LocalDateTime.now()));
             statement.setLong(2, requestId);
             statement.executeUpdate();
@@ -390,7 +390,7 @@ public class BuildingRepository {
     public Long findBuildingIdByUnitId(Long unitId) {
         String sql = "SELECT building_id FROM housing_units WHERE id = ?";
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, unitId);
             try (ResultSet rs = statement.executeQuery()) {
                 if (rs.next()) {
@@ -440,7 +440,8 @@ public class BuildingRepository {
         String approvalAction = rs.getString("approval_action");
         String adminInviteCode = rs.getString("admin_invite_code");
         java.sql.Timestamp adminInviteExpiresRaw = rs.getTimestamp("admin_invite_expires_at");
-        LocalDateTime adminInviteExpiresAt = adminInviteExpiresRaw != null ? adminInviteExpiresRaw.toLocalDateTime() : null;
+        LocalDateTime adminInviteExpiresAt = adminInviteExpiresRaw != null ? adminInviteExpiresRaw.toLocalDateTime()
+                : null;
         java.sql.Timestamp adminInviteUsedRaw = rs.getTimestamp("admin_invite_used_at");
         LocalDateTime adminInviteUsedAt = adminInviteUsedRaw != null ? adminInviteUsedRaw.toLocalDateTime() : null;
 
@@ -476,8 +477,6 @@ public class BuildingRepository {
                 approvalAction,
                 adminInviteCode,
                 adminInviteExpiresAt,
-                adminInviteUsedAt
-        );
+                adminInviteUsedAt);
     }
 }
-

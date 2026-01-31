@@ -10,9 +10,15 @@ public record CommonCharge(
         String description,
         BigDecimal amount,
         String type,
+        String origin,
         Boolean prorateable,
         String payerType,
-        String receiptText
+        String receiptText,
+        String receiptFileId,
+        String receiptFileName,
+        String receiptFolderId,
+        String receiptMimeType,
+        java.time.LocalDateTime receiptUploadedAt
 ) {
     public CommonCharge {
         Objects.requireNonNull(periodId, "periodId");

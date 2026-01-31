@@ -200,6 +200,84 @@ curl "http://localhost:7000/api/incidents/my?from=2025-01-01&to=2025-01-31" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+## Ejemplos de curl para gastos comunes (GGCC)
+
+> Requiere haber aplicado la migración `016_ggcc_enhancements.sql`. Para acciones de administrador necesitas enviar el header `X-Building-Id` con el edificio seleccionado en el frontend.
+
+Crear un periodo de GGCC (admin):
+```bash
+curl -X POST http://localhost:7000/api/finance/periods \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-Building-Id: 7" \
+  -d '{
+    "period": "2025-10",
+    "dueDate": "2025-10-10",
+    "notes": "Gasto común Octubre"
+  }'
+```
+
+Agregar cargos al periodo (admin):
+```bash
+curl -X POST http://localhost:7000/api/finance/periods/12/charges \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-Building-Id: 7" \
+  -d '{
+    "charges": [
+      {
+        "unitId": 21,
+        "category": "Mantención",
+        "description": "Aseo y jardinería",
+        "amount": 23500,
+        "origin": "PROVEEDOR",
+        "paid": false
+      }
+    ]
+  }'
+```
+
+Subir boleta para un cargo (admin, archivo opcional):
+```bash
+curl -X POST http://localhost:7000/api/finance/charges/55/receipt \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Building-Id: 7" \
+  -F "file=@/path/a/boleta.pdf"
+```
+
+Listar periodos creados (admin):
+```bash
+curl http://localhost:7000/api/finance/periods \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Building-Id: 7"
+```
+
+Listar periodos disponibles para el residente:
+```bash
+curl http://localhost:7000/api/finance/my-periods \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Ver detalle del periodo para el residente:
+```bash
+curl http://localhost:7000/api/finance/my-periods/12 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Descargar PDF del periodo (residente):
+```bash
+curl -o ggcc-2025-10.pdf \
+  http://localhost:7000/api/finance/my-periods/12/pdf \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Descargar boleta de un cargo (residente):
+```bash
+curl -o boleta-55.pdf \
+  http://localhost:7000/api/finance/charges/55/receipt \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ## Pruebas
 
 Ejecuta la suite de pruebas con:

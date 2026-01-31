@@ -8,16 +8,24 @@ import com.domu.database.UserBuildingRepository;
 import com.domu.database.VisitRepository;
 import com.domu.database.VisitContactRepository;
 import com.domu.database.IncidentRepository;
+import com.domu.database.PollRepository;
+import com.domu.database.AmenityRepository;
+import com.domu.database.HousingUnitRepository;
 import com.domu.security.AuthenticationHandler;
 import com.domu.security.BCryptPasswordHasher;
 import com.domu.security.JwtProvider;
 import com.domu.security.PasswordHasher;
 import com.domu.service.BuildingService;
+import com.domu.service.CommonExpensePdfService;
+import com.domu.service.CommonExpenseReceiptStorageService;
 import com.domu.service.CommonExpenseService;
 import com.domu.service.CommunityRegistrationStorageService;
 import com.domu.service.VisitService;
 import com.domu.service.VisitContactService;
 import com.domu.service.IncidentService;
+import com.domu.service.PollService;
+import com.domu.service.AmenityService;
+import com.domu.service.HousingUnitService;
 import com.domu.service.UserService;
 import com.domu.web.WebServer;
 import com.google.inject.AbstractModule;
@@ -52,11 +60,16 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(WebServer.class).in(Scopes.SINGLETON);
         bind(UserService.class).in(Scopes.SINGLETON);
         bind(CommonExpenseService.class).in(Scopes.SINGLETON);
+        bind(CommonExpenseReceiptStorageService.class).in(Scopes.SINGLETON);
+        bind(CommonExpensePdfService.class).in(Scopes.SINGLETON);
         bind(BuildingService.class).in(Scopes.SINGLETON);
         bind(CommunityRegistrationStorageService.class).in(Scopes.SINGLETON);
         bind(VisitService.class).in(Scopes.SINGLETON);
         bind(VisitContactService.class).in(Scopes.SINGLETON);
         bind(IncidentService.class).in(Scopes.SINGLETON);
+        bind(PollService.class).in(Scopes.SINGLETON);
+        bind(AmenityService.class).in(Scopes.SINGLETON);
+        bind(HousingUnitService.class).in(Scopes.SINGLETON);
         bind(UserRepository.class).in(Scopes.SINGLETON);
         bind(CommonExpenseRepository.class).in(Scopes.SINGLETON);
         bind(BuildingRepository.class).in(Scopes.SINGLETON);
@@ -64,6 +77,9 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(VisitRepository.class).in(Scopes.SINGLETON);
         bind(VisitContactRepository.class).in(Scopes.SINGLETON);
         bind(IncidentRepository.class).in(Scopes.SINGLETON);
+        bind(PollRepository.class).in(Scopes.SINGLETON);
+        bind(AmenityRepository.class).in(Scopes.SINGLETON);
+        bind(HousingUnitRepository.class).in(Scopes.SINGLETON);
         bind(AuthenticationHandler.class).in(Scopes.SINGLETON);
         bind(PasswordHasher.class).to(BCryptPasswordHasher.class).in(Scopes.SINGLETON);
     }
@@ -81,21 +97,23 @@ public class DependencyInjectionModule extends AbstractModule {
         String jdbcUrl = resolve(properties, "db.uri", "DB_URI", "");
         if (jdbcUrl == null || jdbcUrl.isBlank()) {
             jdbcUrl = String.format(
-                "jdbc:mysql://%s:%s/%s?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC",
-                host,
-                port,
-                dbName
-            );
+                    "jdbc:mysql://%s:%s/%s?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC",
+                    host,
+                    port,
+                    dbName);
         }
 
-            return new AppConfig(
+        return new AppConfig(
                 jdbcUrl,
                 dbUser,
                 dbPassword,
                 resolve(properties, "jwt.secret", "JWT_SECRET", DEFAULT_JWT_SECRET),
                 resolve(properties, "jwt.issuer", "JWT_ISSUER", DEFAULT_JWT_ISSUER),
-                parseLong(resolve(properties, "jwt.expirationMinutes", "JWT_EXPIRATION_MINUTES", String.valueOf(DEFAULT_JWT_EXPIRATION_MINUTES)), DEFAULT_JWT_EXPIRATION_MINUTES),
-                parseInteger(resolve(properties, "server.port", "APP_SERVER_PORT", String.valueOf(AppConfig.DEFAULT_PORT)), AppConfig.DEFAULT_PORT),
+                parseLong(resolve(properties, "jwt.expirationMinutes", "JWT_EXPIRATION_MINUTES",
+                        String.valueOf(DEFAULT_JWT_EXPIRATION_MINUTES)), DEFAULT_JWT_EXPIRATION_MINUTES),
+                parseInteger(
+                        resolve(properties, "server.port", "APP_SERVER_PORT", String.valueOf(AppConfig.DEFAULT_PORT)),
+                        AppConfig.DEFAULT_PORT),
                 resolve(properties, "box.developerToken", "BOX_TOKEN", ""),
                 resolve(properties, "box.rootFolderId", "BOX_ROOT_FOLDER_ID", "0"),
                 resolve(properties, "mail.host", "MAIL_HOST", ""),
@@ -104,8 +122,7 @@ public class DependencyInjectionModule extends AbstractModule {
                 resolve(properties, "mail.password", "MAIL_PASSWORD", ""),
                 resolve(properties, "mail.from", "MAIL_FROM", "no-reply@domu.app"),
                 resolve(properties, "approval.baseUrl", "APPROVAL_BASE_URL", "https://domu.app"),
-                resolve(properties, "approval.recipient", "APPROVALS_RECIPIENT", "")
-            );
+                resolve(properties, "approval.recipient", "APPROVALS_RECIPIENT", ""));
     }
 
     @Provides
@@ -124,8 +141,8 @@ public class DependencyInjectionModule extends AbstractModule {
     @Singleton
     ObjectMapper objectMapper() {
         return new ObjectMapper()
-            .registerModule(new JavaTimeModule())
-            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+                .registerModule(new JavaTimeModule())
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     }
 
     @Provides
@@ -151,12 +168,14 @@ public class DependencyInjectionModule extends AbstractModule {
 
     private static Properties loadProperties() {
         Properties properties = new Properties();
-        try (InputStream input = DependencyInjectionModule.class.getClassLoader().getResourceAsStream("application.properties")) {
+        try (InputStream input = DependencyInjectionModule.class.getClassLoader()
+                .getResourceAsStream("application.properties")) {
             if (input != null) {
                 properties.load(input);
             }
         } catch (IOException ignored) {
-            // Use defaults and environment variables when the properties file is not available.
+            // Use defaults and environment variables when the properties file is not
+            // available.
         }
         return properties;
     }

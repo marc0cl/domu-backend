@@ -1,6 +1,7 @@
 package com.domu.domain.core;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Objects;
 
 public record HousingUnit(
@@ -11,8 +12,10 @@ public record HousingUnit(
         String floor,
         BigDecimal aliquotPercentage,
         BigDecimal squareMeters,
-        String status
-) {
+        String status,
+        Long createdByUserId,
+        LocalDateTime createdAt,
+        LocalDateTime updatedAt) {
     public HousingUnit {
         Objects.requireNonNull(buildingId, "buildingId");
         Objects.requireNonNull(number, "number");
