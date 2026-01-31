@@ -31,6 +31,7 @@ import com.domu.dto.TimeSlotRequest;
 import com.domu.dto.ReservationRequest;
 import com.domu.service.AmenityService;
 import com.domu.service.BuildingService;
+import com.domu.service.CommonExpensePdfService;
 import com.domu.service.CommonExpenseService;
 import com.domu.service.VisitService;
 import com.domu.service.VisitContactService;
@@ -42,6 +43,7 @@ import com.domu.service.InvalidCredentialsException;
 import com.domu.service.UserAlreadyExistsException;
 import com.domu.service.UserService;
 import com.domu.service.ValidationException;
+import com.domu.database.HousingUnitRepository;
 import com.domu.database.UserBuildingRepository;
 import com.domu.database.BuildingRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -51,6 +53,7 @@ import com.google.inject.Singleton;
 
 import io.javalin.Javalin;
 import io.javalin.http.HttpStatus;
+import io.javalin.http.UnauthorizedResponse;
 import io.javalin.json.JavalinJackson;
 import io.javalin.http.UploadedFile;
 import io.javalin.validation.BodyValidator;
@@ -75,6 +78,7 @@ public final class WebServer {
     private final HikariDataSource dataSource;
     private final UserService userService;
     private final CommonExpenseService commonExpenseService;
+    private final CommonExpensePdfService commonExpensePdfService;
     private final BuildingService buildingService;
     private final VisitService visitService;
     private final VisitContactService visitContactService;
@@ -87,6 +91,7 @@ public final class WebServer {
     private final ObjectMapper objectMapper;
     private final UserBuildingRepository userBuildingRepository;
     private final BuildingRepository buildingRepository;
+    private final HousingUnitRepository housingUnitRepository;
     private final EmailService emailService;
     private final com.domu.database.UserRepository userRepository;
     private final Javalin app;
@@ -97,6 +102,7 @@ public final class WebServer {
             final HikariDataSource dataSource,
             final UserService userService,
             final CommonExpenseService commonExpenseService,
+            final CommonExpensePdfService commonExpensePdfService,
             final BuildingService buildingService,
             final VisitService visitService,
             final VisitContactService visitContactService,
@@ -109,11 +115,13 @@ public final class WebServer {
             final ObjectMapper objectMapper,
             final UserBuildingRepository userBuildingRepository,
             final BuildingRepository buildingRepository,
+            final HousingUnitRepository housingUnitRepository,
             final EmailService emailService,
             final com.domu.database.UserRepository userRepository) {
         this.dataSource = dataSource;
         this.userService = userService;
         this.commonExpenseService = commonExpenseService;
+        this.commonExpensePdfService = commonExpensePdfService;
         this.buildingService = buildingService;
         this.visitService = visitService;
         this.visitContactService = visitContactService;
@@ -126,6 +134,7 @@ public final class WebServer {
         this.objectMapper = objectMapper;
         this.userBuildingRepository = userBuildingRepository;
         this.buildingRepository = buildingRepository;
+        this.housingUnitRepository = housingUnitRepository;
         this.emailService = emailService;
         this.userRepository = userRepository;
         this.app = createApp();
@@ -601,16 +610,91 @@ public final class WebServer {
         });
 
         javalin.post("/api/finance/periods", ctx -> {
-            CreateCommonExpensePeriodRequest request = validateCreatePeriod(
-                    ctx.bodyValidator(CreateCommonExpensePeriodRequest.class));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ensureAdmin(user);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
+            CreateCommonExpensePeriodRequest request = ctx.bodyValidator(CreateCommonExpensePeriodRequest.class).get();
+            request.setBuildingId(selectedBuildingId);
+            validateCreatePeriod(request);
             ctx.status(HttpStatus.CREATED);
-            ctx.json(commonExpenseService.createPeriod(request));
+            ctx.json(commonExpenseService.createPeriod(request, user, selectedBuildingId));
         });
 
         javalin.post("/api/finance/periods/{periodId}/charges", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ensureAdmin(user);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
             Long periodId = Long.parseLong(ctx.pathParam("periodId"));
             AddCommonChargesRequest request = validateAddCharges(ctx.bodyValidator(AddCommonChargesRequest.class));
-            ctx.json(commonExpenseService.addCharges(periodId, request));
+            ctx.json(commonExpenseService.addCharges(periodId, request, user, selectedBuildingId));
+        });
+
+        javalin.get("/api/finance/periods", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ensureAdmin(user);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
+            Integer fromIndex = parsePeriodIndex(ctx.queryParam("from"));
+            Integer toIndex = parsePeriodIndex(ctx.queryParam("to"));
+            ctx.json(commonExpenseService.listPeriodsForBuilding(selectedBuildingId, fromIndex, toIndex));
+        });
+
+        javalin.get("/api/finance/my-periods", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
+            Integer fromIndex = parsePeriodIndex(ctx.queryParam("from"));
+            Integer toIndex = parsePeriodIndex(ctx.queryParam("to"));
+            ctx.json(commonExpenseService.listPeriodsForUser(user, selectedBuildingId, fromIndex, toIndex));
+        });
+
+        javalin.get("/api/finance/my-periods/{periodId}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
+            Long periodId = Long.parseLong(ctx.pathParam("periodId"));
+            var building = resolveBuildingSummary(user, selectedBuildingId);
+            var unit = user != null && user.unitId() != null
+                    ? housingUnitRepository.findById(user.unitId()).orElse(null)
+                    : null;
+            ctx.json(commonExpenseService.getPeriodDetailForUser(user, selectedBuildingId, periodId, building, unit));
+        });
+
+        javalin.get("/api/finance/my-periods/{periodId}/pdf", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
+            Long periodId = Long.parseLong(ctx.pathParam("periodId"));
+            var building = resolveBuildingSummary(user, selectedBuildingId);
+            var unit = user != null && user.unitId() != null
+                    ? housingUnitRepository.findById(user.unitId()).orElse(null)
+                    : null;
+            var detail = commonExpenseService.getPeriodDetailForUser(user, selectedBuildingId, periodId, building, unit);
+            byte[] pdf = commonExpensePdfService.buildResidentPeriodPdf(detail);
+            String fileName = String.format("ggcc-%02d-%d.pdf", detail.month(), detail.year());
+            ctx.header("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
+            ctx.contentType("application/pdf");
+            ctx.result(pdf);
+        });
+
+        javalin.post("/api/finance/charges/{chargeId}/receipt", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ensureAdmin(user);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
+            Long chargeId = Long.parseLong(ctx.pathParam("chargeId"));
+            var document = extractReceiptDocument(ctx);
+            var building = resolveBuildingSummary(user, selectedBuildingId);
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(commonExpenseService.uploadChargeReceipt(chargeId, user, selectedBuildingId, building, document));
+        });
+
+        javalin.get("/api/finance/charges/{chargeId}/receipt", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = (user != null && user.roleId() != null && user.roleId() == 1L)
+                    ? requireSelectedBuilding(ctx, user)
+                    : validateSelectedBuilding(ctx, user);
+            Long chargeId = Long.parseLong(ctx.pathParam("chargeId"));
+            var receipt = commonExpenseService.downloadReceipt(chargeId, user, selectedBuildingId);
+            String safeName = receipt.fileName() != null ? receipt.fileName() : "boleta.pdf";
+            ctx.header("Content-Disposition", "attachment; filename=\"" + safeName + "\"");
+            ctx.contentType("application/pdf");
+            ctx.result(receipt.content());
         });
 
         javalin.get("/api/finance/my-charges", ctx -> {
@@ -1117,14 +1201,23 @@ public final class WebServer {
                 .get();
     }
 
-    private CreateCommonExpensePeriodRequest validateCreatePeriod(
-            BodyValidator<CreateCommonExpensePeriodRequest> validator) {
-        return validator
-                .check(req -> req.getBuildingId() != null, "buildingId es requerido")
-                .check(req -> req.getYear() != null, "year es requerido")
-                .check(req -> req.getMonth() != null, "month es requerido")
-                .check(req -> req.getDueDate() != null, "dueDate es requerido")
-                .get();
+    private CreateCommonExpensePeriodRequest validateCreatePeriod(CreateCommonExpensePeriodRequest request) {
+        if (request == null) {
+            throw new ValidationException("El cuerpo es obligatorio");
+        }
+        if (request.getBuildingId() == null) {
+            throw new ValidationException("buildingId es requerido");
+        }
+        if (request.getYear() == null) {
+            throw new ValidationException("year es requerido");
+        }
+        if (request.getMonth() == null) {
+            throw new ValidationException("month es requerido");
+        }
+        if (request.getDueDate() == null) {
+            throw new ValidationException("dueDate es requerido");
+        }
+        return request;
     }
 
     private AddCommonChargesRequest validateAddCharges(BodyValidator<AddCommonChargesRequest> validator) {
@@ -1301,6 +1394,25 @@ public final class WebServer {
         }
     }
 
+    private com.domu.dto.CommonExpenseReceiptDocument extractReceiptDocument(Context ctx) {
+        UploadedFile uploaded = ctx.uploadedFile("document");
+        if (uploaded == null) {
+            throw new ValidationException("document es requerido");
+        }
+        try (InputStream content = uploaded.content()) {
+            byte[] bytes = content.readAllBytes();
+            if (bytes.length == 0) {
+                throw new ValidationException("El archivo de la boleta está vacío");
+            }
+            return new com.domu.dto.CommonExpenseReceiptDocument(
+                    uploaded.filename() != null ? uploaded.filename() : "boleta.pdf",
+                    uploaded.contentType(),
+                    bytes);
+        } catch (IOException e) {
+            throw new ValidationException("No se pudo leer la boleta: " + e.getMessage());
+        }
+    }
+
     private Integer parseInteger(String raw, String fieldName) {
         if (raw == null || raw.isBlank()) {
             return null;
@@ -1321,6 +1433,50 @@ public final class WebServer {
         } catch (NumberFormatException e) {
             throw new ValidationException(fieldName + " debe ser numérico");
         }
+    }
+
+    private void ensureAdmin(User user) {
+        if (user == null || user.roleId() == null || user.roleId() != 1L) {
+            throw new UnauthorizedResponse("Solo administradores pueden realizar esta acción");
+        }
+    }
+
+    private Long requireSelectedBuilding(Context ctx, User user) {
+        Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+        if (selectedBuildingId == null) {
+            throw new ValidationException("Debes seleccionar un edificio");
+        }
+        return selectedBuildingId;
+    }
+
+    private Integer parsePeriodIndex(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String[] parts = raw.trim().split("-");
+        if (parts.length != 2) {
+            throw new ValidationException("Formato de período inválido. Usa YYYY-MM.");
+        }
+        try {
+            int year = Integer.parseInt(parts[0]);
+            int month = Integer.parseInt(parts[1]);
+            if (month < 1 || month > 12) {
+                throw new ValidationException("Mes inválido en período.");
+            }
+            return year * 100 + month;
+        } catch (NumberFormatException e) {
+            throw new ValidationException("Período inválido. Usa YYYY-MM.");
+        }
+    }
+
+    private BuildingSummaryResponse resolveBuildingSummary(User user, Long buildingId) {
+        if (user == null || buildingId == null) {
+            return null;
+        }
+        return loadBuildings(user).stream()
+                .filter(b -> buildingId.equals(b.id()))
+                .findFirst()
+                .orElse(null);
     }
 
     private java.time.LocalDate parseDate(String raw) {
