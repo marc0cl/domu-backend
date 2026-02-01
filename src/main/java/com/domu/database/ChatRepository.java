@@ -117,7 +117,7 @@ public class ChatRepository {
 
     public List<ChatMessageResponse> findMessagesByRoom(Long roomId, int limit) {
         String sql = """
-                SELECT m.*, u.firstName, u.lastName
+                SELECT m.*, u.first_name, u.last_name
                 FROM chat_message m
                 JOIN users u ON m.sender_id = u.id
                 WHERE m.room_id = ?
@@ -142,7 +142,7 @@ public class ChatRepository {
 
     private List<ChatRoomResponse.UserSummary> findParticipantsByRoom(Long roomId) throws SQLException {
         String sql = """
-                SELECT u.id, u.firstName, u.lastName, p.is_typing
+                SELECT u.id, u.first_name, u.last_name, p.is_typing
                 FROM chat_participant p
                 JOIN users u ON p.user_id = u.id
                 WHERE p.room_id = ?
@@ -155,7 +155,7 @@ public class ChatRepository {
                 while (rs.next()) {
                     users.add(ChatRoomResponse.UserSummary.builder()
                             .id(rs.getLong("id"))
-                            .name(rs.getString("firstName") + " " + rs.getString("lastName"))
+                            .name(rs.getString("first_name") + " " + rs.getString("last_name"))
                             .isTyping(rs.getBoolean("is_typing"))
                             .build());
                 }
@@ -174,7 +174,7 @@ public class ChatRepository {
                 .id(rs.getLong("id"))
                 .roomId(rs.getLong("room_id"))
                 .senderId(rs.getLong("sender_id"))
-                .senderName(rs.getString("firstName") + " " + rs.getString("lastName"))
+                .senderName(rs.getString("first_name") + " " + rs.getString("last_name"))
                 .content(rs.getString("content"))
                 .type(rs.getString("type"))
                 .boxFileId(rs.getString("box_file_id"))

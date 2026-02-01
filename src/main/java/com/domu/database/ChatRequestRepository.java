@@ -42,7 +42,7 @@ public class ChatRequestRepository {
 
     public List<ChatRequestResponse> findPendingByReceiver(Long receiverId) {
         String sql = """
-                SELECT cr.*, u.firstName, u.lastName, mi.title as item_title
+                SELECT cr.*, u.first_name, u.last_name, mi.title as item_title
                 FROM chat_request cr
                 JOIN users u ON cr.sender_id = u.id
                 LEFT JOIN market_item mi ON cr.item_id = mi.id
@@ -78,7 +78,7 @@ public class ChatRequestRepository {
 
     public Optional<ChatRequestResponse> findById(Long id) {
         String sql = """
-                SELECT cr.*, u.firstName, u.lastName, mi.title as item_title
+                SELECT cr.*, u.first_name, u.last_name, mi.title as item_title
                 FROM chat_request cr
                 JOIN users u ON cr.sender_id = u.id
                 LEFT JOIN market_item mi ON cr.item_id = mi.id
@@ -100,7 +100,7 @@ public class ChatRequestRepository {
         return ChatRequestResponse.builder()
                 .id(rs.getLong("id"))
                 .senderId(rs.getLong("sender_id"))
-                .senderName(rs.getString("firstName") + " " + rs.getString("lastName"))
+                .senderName(rs.getString("first_name") + " " + rs.getString("last_name"))
                 .receiverId(rs.getLong("receiver_id"))
                 .buildingId(rs.getLong("building_id"))
                 .itemId(rs.getObject("item_id") != null ? rs.getLong("item_id") : null)

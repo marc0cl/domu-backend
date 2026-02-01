@@ -1084,7 +1084,7 @@ public final class WebServer {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             Long buildingId = validateSelectedBuilding(ctx, user);
             
-            Map<String, Object> body = ctx.bodyAsClass(new TypeReference<Map<String, Object>>() {});
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, Object>>() {});
             Long receiverId = Long.parseLong(body.get("receiverId").toString());
             Long itemId = body.get("itemId") != null ? Long.parseLong(body.get("itemId").toString()) : null;
             String message = (String) body.get("message");
@@ -1095,7 +1095,7 @@ public final class WebServer {
 
         javalin.put("/api/chat/requests/{id}/status", ctx -> {
             Long requestId = Long.parseLong(ctx.pathParam("id"));
-            Map<String, String> body = ctx.bodyAsClass(new TypeReference<Map<String, String>>() {});
+            Map<String, String> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, String>>() {});
             chatRequestService.updateRequestStatus(requestId, body.get("status"));
             ctx.status(HttpStatus.NO_CONTENT);
         });

@@ -5,6 +5,8 @@ import com.box.sdk.BoxAPIException;
 import com.box.sdk.BoxFile;
 import com.box.sdk.BoxFolder;
 import com.box.sdk.BoxItem;
+import com.box.sdk.BoxSharedLink;
+import com.box.sdk.sharedlink.BoxSharedLinkRequest;
 import com.domu.config.AppConfig;
 import com.domu.service.ValidationException;
 import com.google.inject.Inject;
@@ -56,7 +58,14 @@ public class MarketplaceStorageService {
             BoxFolder itemFolder = new BoxFolder(api, itemFolderInfo.getID());
             try (InputStream is = new ByteArrayInputStream(content)) {
                 BoxFile.Info uploaded = itemFolder.uploadFile(is, fileName);
-                return uploaded.getID();
+                
+                // Crear un Shared Link público para que la imagen sea visible en el frontend
+                BoxFile file = new BoxFile(api, uploaded.getID());
+                BoxSharedLinkRequest sharedLinkRequest = new BoxSharedLinkRequest()
+                        .access(BoxSharedLink.Access.OPEN);
+                
+                BoxSharedLink sharedLink = file.createSharedLink(sharedLinkRequest);
+                return sharedLink.getURL();
             }
         } catch (Exception e) {
             LOGGER.error("Error subiendo imagen a Box", e);

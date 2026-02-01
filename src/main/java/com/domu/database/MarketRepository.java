@@ -20,7 +20,7 @@ public class MarketRepository {
 
     public List<MarketItemResponse> findAllByBuilding(Long buildingId, Long categoryId, String status) {
         StringBuilder sql = new StringBuilder("""
-                SELECT i.*, c.name as category_name, u.firstName, u.lastName
+                SELECT i.*, c.name as category_name, u.first_name, u.last_name
                 FROM market_item i
                 JOIN market_category c ON i.category_id = c.id
                 JOIN users u ON i.user_id = u.id
@@ -101,7 +101,7 @@ public class MarketRepository {
         return MarketItemResponse.builder()
                 .id(rs.getLong("id"))
                 .userId(rs.getLong("user_id"))
-                .sellerName(rs.getString("firstName") + " " + rs.getString("lastName"))
+                .sellerName(rs.getString("first_name") + " " + rs.getString("last_name"))
                 .categoryId(rs.getLong("category_id"))
                 .categoryName(rs.getString("category_name"))
                 .title(rs.getString("title"))

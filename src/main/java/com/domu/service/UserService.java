@@ -66,7 +66,9 @@ public class UserService {
                 documentNumber,
                 resident,
                 LocalDateTime.now(),
-                "PENDING");
+                "PENDING",
+                null,
+                null);
         User saved = userRepository.save(user);
         
         if (buildingId != null) {
@@ -134,7 +136,9 @@ public class UserService {
                 documentNumber,
                 resident,
                 LocalDateTime.now(),
-                "ACTIVE");
+                "ACTIVE",
+                null,
+                null);
         return userRepository.save(user);
     }
 
@@ -162,7 +166,9 @@ public class UserService {
                 documentNumber,
                 false,
                 LocalDateTime.now(),
-                "ACTIVE");
+                "ACTIVE",
+                null,
+                null);
         User saved = userRepository.save(user);
         userBuildingRepository.addUserToBuilding(saved.id(), buildingId);
         return saved;
