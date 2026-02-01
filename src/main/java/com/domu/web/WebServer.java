@@ -7,11 +7,22 @@ import com.domu.dto.AdminInviteInfoResponse;
 import com.domu.dto.AdminInviteRegistrationRequest;
 import com.domu.dto.AuthResponse;
 import com.domu.dto.BuildingRequestResponse;
+import com.domu.dto.ConfirmationRequest;
 import com.domu.dto.CreateBuildingRequest;
 import com.domu.dto.ErrorResponse;
 import com.domu.dto.LoginRequest;
+import com.domu.dto.MarketItemRequest;
+import com.domu.dto.MarketItemResponse;
+import com.domu.dto.ChatMessageRequest;
+import com.domu.dto.ChatMessageResponse;
+import com.domu.dto.ChatRoomResponse;
+import com.domu.dto.ChatRequestResponse;
+import com.domu.dto.UserProfileResponse;
 import com.domu.dto.RegistrationRequest;
 import com.domu.dto.UserResponse;
+import com.domu.service.ChatRequestService;
+import com.domu.service.UserProfileService;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.domu.dto.AddCommonChargesRequest;
 import com.domu.dto.CommonPaymentRequest;
 import com.domu.dto.CreateCommonExpensePeriodRequest;
@@ -20,6 +31,7 @@ import com.domu.dto.VisitContactRequest;
 import com.domu.dto.VisitFromContactRequest;
 import com.domu.dto.VisitorQrRequest;
 import com.domu.dto.BuildingSummaryResponse;
+import com.domu.dto.IncidentAssignmentRequest;
 import com.domu.dto.IncidentRequest;
 import com.domu.dto.CommunityRegistrationDocument;
 import com.domu.dto.UpdateProfileRequest;
@@ -31,6 +43,8 @@ import com.domu.dto.AmenityRequest;
 import com.domu.dto.TimeSlotRequest;
 import com.domu.dto.ReservationRequest;
 import com.domu.service.AmenityService;
+import com.domu.service.MarketService;
+import com.domu.service.ChatService;
 import com.domu.service.BuildingService;
 import com.domu.service.CommonExpensePdfService;
 import com.domu.service.CommonExpenseService;
@@ -38,6 +52,9 @@ import com.domu.service.VisitService;
 import com.domu.service.VisitContactService;
 import com.domu.service.IncidentService;
 import com.domu.service.PollService;
+import com.domu.service.ChatRequestService;
+import com.domu.service.UserProfileService;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.domu.security.AuthenticationHandler;
 import com.domu.security.JwtProvider;
 import com.domu.service.InvalidCredentialsException;
@@ -47,6 +64,7 @@ import com.domu.service.ValidationException;
 import com.domu.database.HousingUnitRepository;
 import com.domu.database.UserBuildingRepository;
 import com.domu.database.BuildingRepository;
+import java.util.Map;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.google.inject.Inject;
@@ -69,6 +87,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 import com.domu.email.EmailService;
 
 @Singleton
@@ -86,6 +106,11 @@ public final class WebServer {
     private final IncidentService incidentService;
     private final PollService pollService;
     private final AmenityService amenityService;
+    private final MarketService marketService;
+    private final ChatService chatService;
+    private final ChatRequestService chatRequestService;
+    private final UserProfileService userProfileService;
+    private final ChatWebSocketHandler chatWebSocketHandler;
     private final com.domu.service.HousingUnitService housingUnitService;
     private final AuthenticationHandler authenticationHandler;
     private final JwtProvider jwtProvider;
@@ -110,6 +135,11 @@ public final class WebServer {
             final IncidentService incidentService,
             final PollService pollService,
             final AmenityService amenityService,
+            final MarketService marketService,
+            final ChatService chatService,
+            final ChatRequestService chatRequestService,
+            final UserProfileService userProfileService,
+            final ChatWebSocketHandler chatWebSocketHandler,
             final com.domu.service.HousingUnitService housingUnitService,
             final AuthenticationHandler authenticationHandler,
             final JwtProvider jwtProvider,
@@ -129,6 +159,11 @@ public final class WebServer {
         this.incidentService = incidentService;
         this.pollService = pollService;
         this.amenityService = amenityService;
+        this.marketService = marketService;
+        this.chatService = chatService;
+        this.chatRequestService = chatRequestService;
+        this.userProfileService = userProfileService;
+        this.chatWebSocketHandler = chatWebSocketHandler;
         this.housingUnitService = housingUnitService;
         this.authenticationHandler = authenticationHandler;
         this.jwtProvider = jwtProvider;
@@ -171,6 +206,7 @@ public final class WebServer {
 
         registerExceptionHandlers(javalin);
         registerRoutes(javalin);
+        javalin.ws("/ws/chat", chatWebSocketHandler::handle);
         javalin.get("/health", ctx -> ctx.result("OK"));
 
         return javalin;
@@ -347,12 +383,19 @@ public final class WebServer {
         });
 
         javalin.post("/api/auth/login", ctx -> {
-            LoginRequest request = validateLogin(ctx.bodyValidator(LoginRequest.class));
+            LoginRequest request = ctx.bodyValidator(LoginRequest.class).get();
             User user = userService.authenticate(request.getEmail(), request.getPassword());
             String token = jwtProvider.generateToken(user);
             var buildings = loadBuildings(user);
             Long activeBuildingId = resolveActiveBuildingId(user, buildings);
             ctx.json(new AuthResponse(token, UserMapper.toResponse(user, buildings, activeBuildingId)));
+        });
+
+        javalin.post("/api/auth/confirm", ctx -> {
+            ConfirmationRequest request = ctx.bodyValidator(ConfirmationRequest.class).get();
+            userService.confirmUser(request.getToken());
+            ctx.status(HttpStatus.OK);
+            ctx.json(Map.of("message", "Usuario confirmado exitosamente"));
         });
 
         javalin.before("/api/users/*", authenticationHandler);
@@ -376,6 +419,10 @@ public final class WebServer {
         javalin.before("/api/amenities/*", authenticationHandler);
         javalin.before("/api/reservations", authenticationHandler);
         javalin.before("/api/reservations/*", authenticationHandler);
+        javalin.before("/api/market", authenticationHandler);
+        javalin.before("/api/market/*", authenticationHandler);
+        javalin.before("/api/chat", authenticationHandler);
+        javalin.before("/api/chat/*", authenticationHandler);
 
         // Extraer X-Building-Id header para filtrar datos por comunidad
         // La validación de acceso se hace en cada endpoint que use este valor
@@ -419,6 +466,26 @@ public final class WebServer {
             ctx.json(UserMapper.toResponse(updated, buildings, activeBuildingId));
         });
 
+        javalin.post("/api/users/me/avatar", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            var file = ctx.uploadedFile("avatar");
+            if (file == null) {
+                throw new ValidationException("Archivo avatar es requerido");
+            }
+            userService.updateAvatar(user, file.filename(), file.content().readAllBytes());
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        javalin.post("/api/users/me/privacy-avatar", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            var file = ctx.uploadedFile("avatar");
+            if (file == null) {
+                throw new ValidationException("Archivo avatar es requerido");
+            }
+            userService.updatePrivacyAvatar(user, file.filename(), file.content().readAllBytes());
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
         javalin.post("/api/users/me/password", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ChangePasswordRequest request = ctx.bodyValidator(ChangePasswordRequest.class)
@@ -440,17 +507,14 @@ public final class WebServer {
                 return;
             }
             RegistrationRequest request = validateRegistration(ctx.bodyValidator(RegistrationRequest.class));
-            if (request.getRoleId() == null || (request.getRoleId() != 3L && request.getRoleId() != 4L)) {
-                throw new ValidationException("Solo puedes crear conserjes (rol 3) o funcionarios (rol 4)");
-            }
-            // Forzar resident=false para estos roles
-            request.setResident(false);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, current);
+            
             String rawPassword = request.getPassword();
             if (rawPassword == null || rawPassword.isBlank()) {
                 rawPassword = "1234567890";
             }
 
-            User created = userService.registerUser(
+            User created = userService.adminCreateUser(
                     request.getUnitId(),
                     request.getRoleId(),
                     request.getFirstName(),
@@ -460,7 +524,9 @@ public final class WebServer {
                     request.getPhone(),
                     request.getDocumentNumber(),
                     request.getResident(),
-                    rawPassword);
+                    rawPassword,
+                    selectedBuildingId);
+            
             var buildings = loadBuildings(created);
             Long activeBuildingId = resolveActiveBuildingId(created, buildings);
             sendUserCredentialsEmail(created, rawPassword);
@@ -844,6 +910,13 @@ public final class WebServer {
             ctx.json(incidentService.updateStatus(user, incidentId, request.getStatus()));
         });
 
+        javalin.patch("/api/incidents/{incidentId}/assign", ctx -> {
+            Long incidentId = Long.parseLong(ctx.pathParam("incidentId"));
+            IncidentAssignmentRequest request = ctx.bodyValidator(IncidentAssignmentRequest.class).get();
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(incidentService.updateAssignment(user, incidentId, request.getAssignedToUserId()));
+        });
+
         javalin.get("/api/polls", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             String status = ctx.queryParam("status");
@@ -967,6 +1040,156 @@ public final class WebServer {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             Long reservationId = Long.parseLong(ctx.pathParam("reservationId"));
             ctx.json(amenityService.cancelReservation(user, reservationId));
+        });
+
+        // ==================== MARKETPLACE ====================
+
+        javalin.get("/api/market/items", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            Long categoryId = ctx.queryParam("categoryId") != null ? Long.parseLong(ctx.queryParam("categoryId")) : null;
+            String status = ctx.queryParam("status");
+            ctx.json(marketService.listItems(selectedBuildingId, categoryId, status));
+        });
+
+        javalin.get("/api/market/items/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            Long itemId = Long.parseLong(ctx.pathParam("id"));
+            ctx.json(marketService.getItem(itemId, selectedBuildingId));
+        });
+
+        javalin.put("/api/market/items/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long itemId = Long.parseLong(ctx.pathParam("id"));
+            
+            MarketItemRequest request = new MarketItemRequest();
+            request.setTitle(ctx.formParam("title"));
+            request.setDescription(ctx.formParam("description"));
+            request.setPrice(Double.parseDouble(ctx.formParam("price")));
+            request.setCategoryId(Long.parseLong(ctx.formParam("categoryId")));
+
+            // Procesar nuevas imágenes
+            List<UploadedFile> files = ctx.uploadedFiles("images");
+            java.util.List<com.domu.service.MarketService.ImageContent> imageList = new java.util.ArrayList<>();
+            for (UploadedFile file : files) {
+                imageList.add(new com.domu.service.MarketService.ImageContent(file.filename(), file.content().readAllBytes()));
+            }
+
+            // Procesar URLs eliminadas
+            String deletedJson = ctx.formParam("deletedImageUrls");
+            java.util.List<String> deletedList = deletedJson != null ? objectMapper.readValue(deletedJson, new TypeReference<List<String>>() {}) : null;
+
+            marketService.updateItem(itemId, user.id(), request, imageList, deletedList);
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        javalin.delete("/api/market/items/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long itemId = Long.parseLong(ctx.pathParam("id"));
+            marketService.deleteItem(itemId, user.id());
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        javalin.post("/api/market/items", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            
+            MarketItemRequest request = new MarketItemRequest();
+            request.setTitle(ctx.formParam("title"));
+            request.setDescription(ctx.formParam("description"));
+            request.setPrice(Double.parseDouble(ctx.formParam("price")));
+            request.setCategoryId(Long.parseLong(ctx.formParam("categoryId")));
+            request.setOriginalPriceLink(ctx.formParam("originalPriceLink"));
+
+            List<UploadedFile> files = ctx.uploadedFiles("images");
+            java.util.List<com.domu.service.MarketService.ImageContent> imageList = new java.util.ArrayList<>();
+            
+            for (UploadedFile file : files) {
+                imageList.add(new com.domu.service.MarketService.ImageContent(
+                    file.filename(),
+                    file.content().readAllBytes()
+                ));
+            }
+
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(marketService.createItem(user.id(), selectedBuildingId, request, imageList));
+        });
+
+        // ==================== CHAT ====================
+
+        javalin.get("/api/chat/rooms", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            ctx.json(chatService.getMyRooms(user.id(), selectedBuildingId));
+        });
+
+        javalin.post("/api/chat/rooms", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null) {
+                throw new UnauthorizedResponse();
+            }
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            Long itemId = ctx.queryParam("itemId") != null ? Long.parseLong(ctx.queryParam("itemId")) : null;
+            Long sellerId = Long.parseLong(ctx.queryParam("sellerId"));
+            
+            Long roomId = chatService.startConversation(selectedBuildingId, user.id(), sellerId, itemId);
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(Map.of("roomId", roomId));
+        });
+
+        javalin.get("/api/chat/rooms/{roomId}/messages", ctx -> {
+            Long roomId = Long.parseLong(ctx.pathParam("roomId"));
+            ctx.json(chatService.getMessages(roomId, 50));
+        });
+
+        javalin.get("/api/chat/neighbors", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null) {
+                throw new UnauthorizedResponse();
+            }
+            Long selectedBuildingId = ctx.attribute("selectedBuildingId");
+            ctx.json(userRepository.findNeighborsForChat(selectedBuildingId, user.id()));
+        });
+
+        // ==================== CHAT REQUESTS & PROFILES ====================
+
+        javalin.get("/api/users/{id}/profile", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null) {
+                throw new UnauthorizedResponse();
+            }
+            Long targetUserId = Long.parseLong(ctx.pathParam("id"));
+            Long buildingId = validateSelectedBuilding(ctx, user);
+            ctx.json(userProfileService.getProfile(targetUserId, buildingId, user.id()));
+        });
+
+        javalin.get("/api/chat/requests/me", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(chatRequestService.getPendingRequests(user.id()));
+        });
+
+        javalin.post("/api/chat/requests", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null) {
+                throw new UnauthorizedResponse();
+            }
+            Long buildingId = validateSelectedBuilding(ctx, user);
+            
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, Object>>() {});
+            Long receiverId = Long.parseLong(body.get("receiverId").toString());
+            Long itemId = body.get("itemId") != null ? Long.parseLong(body.get("itemId").toString()) : null;
+            String message = (String) body.get("message");
+
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(Map.of("id", chatRequestService.createRequest(user.id(), receiverId, buildingId, itemId, message)));
+        });
+
+        javalin.put("/api/chat/requests/{id}/status", ctx -> {
+            Long requestId = Long.parseLong(ctx.pathParam("id"));
+            Map<String, String> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, String>>() {});
+            chatRequestService.updateRequestStatus(requestId, body.get("status"));
+            ctx.status(HttpStatus.NO_CONTENT);
         });
     }
 
@@ -1516,28 +1739,57 @@ public final class WebServer {
             if (user == null || user.email() == null || user.email().isBlank()) {
                 return;
             }
-            String loginUrl = resolveFrontendBaseUrl() + "/login";
-            String subject = "Tu acceso a DOMU";
-            String roleLabel = "Funcionario";
-            if (user.roleId() != null && user.roleId() == 3L) {
+            
+            String token = userService.getConfirmationToken(user.id());
+            String frontendUrl = resolveFrontendBaseUrl();
+            String confirmUrl = frontendUrl + "/confirmar?token=" + token;
+            String loginUrl = frontendUrl + "/login";
+            
+            String subject = "Bienvenido a DOMU - Confirma tu cuenta";
+            String roleLabel = "Usuario";
+            if (user.roleId() != null && user.roleId() == 1L) {
+                roleLabel = "Administrador";
+            } else if (user.roleId() != null && user.roleId() == 2L) {
+                roleLabel = "Residente";
+            } else if (user.roleId() != null && user.roleId() == 3L) {
                 roleLabel = "Conserje";
             } else if (user.roleId() != null && user.roleId() == 4L) {
                 roleLabel = "Funcionario";
             }
+            
             String html = """
-                    <h2>Hola %s,</h2>
-                    <p>Tu cuenta en DOMU fue creada.</p>
-                    <p><strong>Correo:</strong> %s<br/>
-                    <strong>Contraseña:</strong> %s<br/>
-                    <strong>Rol:</strong> %s</p>
-                    <p>Puedes iniciar sesión aquí: <a href="%s">%s</a></p>
+                    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                        <h2 style="color: #2c3e50;">¡Hola %s!</h2>
+                        <p>Te damos la bienvenida a <strong>DOMU</strong>. Tu cuenta como <strong>%s</strong> ha sido registrada.</p>
+                        
+                        <div style="background: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                            <p style="margin: 0;"><strong>Tus credenciales de acceso temporal:</strong></p>
+                            <p style="margin: 10px 0 0;"><strong>Correo:</strong> %s</p>
+                            <p style="margin: 5px 0 0;"><strong>Contraseña:</strong> %s</p>
+                        </div>
+                        
+                        <p>Por seguridad, debes confirmar tu cuenta en los próximos <strong>7 días</strong> haciendo clic en el siguiente botón:</p>
+                        
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="%s" style="background: #1abc9c; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Confirmar mi cuenta</a>
+                        </div>
+                        
+                        <p style="font-size: 0.9em; color: #7f8c8d;">Si el botón no funciona, puedes copiar y pegar este enlace en tu navegador:<br/>
+                        <a href="%s">%s</a></p>
+                        
+                        <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;" />
+                        <p style="font-size: 0.8em; color: #95a5a6;">Una vez confirmada, podrás cambiar tu contraseña desde tu perfil en <a href="%s">DOMU</a>.</p>
+                    </div>
                     """.formatted(
                     user.firstName() != null ? user.firstName() : "usuario",
+                    roleLabel,
                     user.email(),
                     rawPassword,
-                    roleLabel,
-                    loginUrl,
+                    confirmUrl,
+                    confirmUrl,
+                    confirmUrl,
                     loginUrl);
+            
             emailService.sendHtml(user.email(), subject, html);
         } catch (Exception e) {
             LOGGER.warn("No se pudo enviar el correo de credenciales: {}", e.getMessage());
