@@ -15,8 +15,8 @@ public final class DataSourceFactory {
         hikariConfig.setUsername(config.dbUser());
         hikariConfig.setPassword(config.dbPassword());
         hikariConfig.setDriverClassName("com.mysql.cj.jdbc.Driver");
-        hikariConfig.setMaximumPoolSize(10);
-        hikariConfig.setMinimumIdle(2);
+        hikariConfig.setMaximumPoolSize(20);
+        hikariConfig.setMinimumIdle(5);
         hikariConfig.setPoolName("domu-hikari-pool");
         hikariConfig.addDataSourceProperty("cachePrepStmts", "true");
         hikariConfig.addDataSourceProperty("prepStmtCacheSize", "250");
