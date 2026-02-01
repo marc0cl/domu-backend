@@ -49,6 +49,7 @@ public class IncidentService {
                 request.getCategory().trim(),
                 priority,
                 status,
+                null, // assignedToUserId initially null
                 createdAt,
                 createdAt));
 
@@ -112,6 +113,15 @@ public class IncidentService {
         return toResponse(updated);
     }
 
+    public IncidentResponse updateAssignment(User user, Long incidentId, Long assignedToUserId) {
+        ensureAdminOrConcierge(user);
+        IncidentRepository.IncidentRow existing = incidentRepository.findById(incidentId)
+                .orElseThrow(() -> new ValidationException("Incidente no encontrado"));
+        IncidentRepository.IncidentRow updated = incidentRepository.updateAssignment(existing.id(), assignedToUserId,
+                LocalDateTime.now());
+        return toResponse(updated);
+    }
+
     private IncidentResponse toResponse(IncidentRepository.IncidentRow row) {
         return new IncidentResponse(
                 row.id(),
@@ -123,6 +133,7 @@ public class IncidentService {
                 row.category(),
                 row.priority(),
                 row.status(),
+                row.assignedToUserId(),
                 row.createdAt(),
                 row.updatedAt());
     }
