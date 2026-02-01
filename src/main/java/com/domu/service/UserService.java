@@ -22,15 +22,28 @@ public class UserService {
     private final UserBuildingRepository userBuildingRepository;
     private final UserConfirmationRepository userConfirmationRepository;
     private final PasswordHasher passwordHasher;
+    private final MarketplaceStorageService storageService;
 
     @Inject
     public UserService(UserRepository userRepository, UserBuildingRepository userBuildingRepository,
             UserConfirmationRepository userConfirmationRepository,
-            PasswordHasher passwordHasher) {
+            PasswordHasher passwordHasher,
+            MarketplaceStorageService storageService) {
         this.userRepository = userRepository;
         this.userBuildingRepository = userBuildingRepository;
         this.userConfirmationRepository = userConfirmationRepository;
         this.passwordHasher = passwordHasher;
+        this.storageService = storageService;
+    }
+
+    public void updateAvatar(User user, String fileName, byte[] content) {
+        String url = storageService.uploadProfileImage(user.id(), fileName, content);
+        userRepository.updateAvatar(user.id(), url);
+    }
+
+    public void updatePrivacyAvatar(User user, String fileName, byte[] content) {
+        String url = storageService.uploadProfileImage(user.id(), fileName, content);
+        userRepository.updatePrivacyAvatar(user.id(), url);
     }
 
     public User adminCreateUser(
@@ -67,6 +80,7 @@ public class UserService {
                 resident,
                 LocalDateTime.now(),
                 "PENDING",
+                null,
                 null,
                 null);
         User saved = userRepository.save(user);
@@ -138,6 +152,7 @@ public class UserService {
                 LocalDateTime.now(),
                 "ACTIVE",
                 null,
+                null,
                 null);
         return userRepository.save(user);
     }
@@ -167,6 +182,7 @@ public class UserService {
                 false,
                 LocalDateTime.now(),
                 "ACTIVE",
+                null,
                 null,
                 null);
         User saved = userRepository.save(user);

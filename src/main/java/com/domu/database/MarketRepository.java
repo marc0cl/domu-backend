@@ -51,7 +51,7 @@ public class MarketRepository {
             try (ResultSet rs = stmt.executeQuery()) {
                 List<MarketItemResponse> items = new ArrayList<>();
                 while (rs.next()) {
-                    items.add(mapItem(rs));
+                    items.add(mapItem(rs, conn));
                 }
                 return items;
             }
@@ -97,9 +97,76 @@ public class MarketRepository {
         }
     }
 
-    private MarketItemResponse mapItem(ResultSet rs) throws SQLException {
+    public void updateItem(Long itemId, Long userId, Long categoryId, String title, String description, Double price) {
+        String sql = "UPDATE market_item SET category_id = ?, title = ?, description = ?, price = ? WHERE id = ? AND user_id = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, categoryId);
+            stmt.setString(2, title);
+            stmt.setString(3, description);
+            stmt.setDouble(4, price);
+            stmt.setLong(5, itemId);
+            stmt.setLong(6, userId);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error actualizando item del mercado", e);
+        }
+    }
+
+    public void deleteItem(Long itemId, Long userId) {
+        String sql = "DELETE FROM market_item WHERE id = ? AND user_id = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, itemId);
+            stmt.setLong(2, userId);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error eliminando item del mercado", e);
+        }
+    }
+
+    public void insertImage(Long itemId, String url, String boxFileId, boolean isMain) {
+        String sql = "INSERT INTO market_item_image (item_id, url, box_file_id, is_main) VALUES (?, ?, ?, ?)";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, itemId);
+            stmt.setString(2, url);
+            stmt.setString(3, boxFileId);
+            stmt.setBoolean(4, isMain);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error insertando imagen del mercado", e);
+        }
+    }
+
+    public void deleteImage(Long itemId, String url) {
+        String sql = "DELETE FROM market_item_image WHERE item_id = ? AND url = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, itemId);
+            stmt.setString(2, url);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error eliminando imagen del mercado", e);
+        }
+    }
+
+    private List<String> findImagesByItem(Long itemId, Connection conn) throws SQLException {
+        String sql = "SELECT url FROM market_item_image WHERE item_id = ? ORDER BY id ASC";
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, itemId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                List<String> urls = new ArrayList<>();
+                while (rs.next()) urls.add(rs.getString("url"));
+                return urls;
+            }
+        }
+    }
+
+    private MarketItemResponse mapItem(ResultSet rs, Connection conn) throws SQLException {
+        Long itemId = rs.getLong("id");
         return MarketItemResponse.builder()
-                .id(rs.getLong("id"))
+                .id(itemId)
                 .userId(rs.getLong("user_id"))
                 .sellerName(rs.getString("first_name") + " " + rs.getString("last_name"))
                 .categoryId(rs.getLong("category_id"))
@@ -110,6 +177,7 @@ public class MarketRepository {
                 .originalPriceLink(rs.getString("original_price_link"))
                 .status(rs.getString("status"))
                 .mainImageUrl(rs.getString("main_image_url"))
+                .imageUrls(findImagesByItem(itemId, conn))
                 .createdAt(rs.getTimestamp("created_at").toLocalDateTime())
                 .build();
     }

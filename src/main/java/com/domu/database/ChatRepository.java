@@ -140,6 +140,23 @@ public class ChatRepository {
         }
     }
 
+    public List<Long> getParticipantIds(Long roomId) {
+        String sql = "SELECT user_id FROM chat_participant WHERE room_id = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, roomId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                List<Long> ids = new ArrayList<>();
+                while (rs.next()) {
+                    ids.add(rs.getLong("user_id"));
+                }
+                return ids;
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error buscando IDs de participantes", e);
+        }
+    }
+
     private List<ChatRoomResponse.UserSummary> findParticipantsByRoom(Long roomId) throws SQLException {
         String sql = """
                 SELECT u.id, u.first_name, u.last_name, p.is_typing

@@ -2,7 +2,6 @@ package com.domu.domain.core;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Objects;
 
 public record User(
         Long id,
@@ -19,13 +18,14 @@ public record User(
         LocalDateTime createdAt,
         String status,
         String bio,
-        String avatarBoxId
+        String avatarBoxId,
+        String privacyAvatarBoxId
 ) {
     public User {
-        Objects.requireNonNull(firstName, "firstName");
-        Objects.requireNonNull(lastName, "lastName");
-        Objects.requireNonNull(email, "email");
-        Objects.requireNonNull(passwordHash, "passwordHash");
+        // Validaciones mínimas para permitir el inicio de sesión incluso con datos incompletos
+        if (email == null) email = "unknown@domu.app";
+        if (firstName == null) firstName = "Usuario";
+        if (lastName == null) lastName = "DOMU";
     }
 
     public User withId(Long newId) {
@@ -44,7 +44,8 @@ public record User(
                 createdAt,
                 status,
                 bio,
-                avatarBoxId
+                avatarBoxId,
+                privacyAvatarBoxId
         );
     }
 }

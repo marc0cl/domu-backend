@@ -28,6 +28,8 @@ public final class UserMapper {
                 user.resident(),
                 user.createdAt(),
                 user.status(),
+                user.avatarBoxId(),
+                user.privacyAvatarBoxId(),
                 activeBuildingId,
                 buildings
         );

@@ -27,6 +27,7 @@ public class MarketplaceStorageService {
     private static final Logger LOGGER = LoggerFactory.getLogger(MarketplaceStorageService.class);
     private static final String MARKET_ROOT = "Marketplace";
     private static final String CHAT_ROOT = "Chats";
+    private static final String PROFILES_ROOT = "Profiles";
 
     @Inject
     public MarketplaceStorageService(AppConfig config) {
@@ -59,16 +60,29 @@ public class MarketplaceStorageService {
             try (InputStream is = new ByteArrayInputStream(content)) {
                 BoxFile.Info uploaded = itemFolder.uploadFile(is, fileName);
                 
-                // Crear un Shared Link público para que la imagen sea visible en el frontend
+                // Crear un Shared Link público
                 BoxFile file = new BoxFile(api, uploaded.getID());
                 BoxSharedLinkRequest sharedLinkRequest = new BoxSharedLinkRequest()
-                        .access(BoxSharedLink.Access.OPEN);
+                        .access(BoxSharedLink.Access.OPEN)
+                        .permissions(true, false); // Permitir descarga (necesario para direct link)
                 
-                BoxSharedLink sharedLink = file.createSharedLink(sharedLinkRequest);
-                return sharedLink.getURL();
+                file.createSharedLink(sharedLinkRequest);
+                
+                // Obtener la información del archivo incluyendo el shared link para extraer la URL de descarga
+                BoxFile.Info fileInfo = file.getInfo("shared_link");
+                return fileInfo.getSharedLink().getDownloadURL();
             }
+        } catch (com.box.sdk.BoxAPIResponseException e) {
+            LOGGER.error("Error de API de Box: code={}, message={}", e.getResponseCode(), e.getMessage());
+            if (e.getResponseCode() == 401) {
+                throw new ValidationException("El token de Box ha expirado. Por favor, actualiza el BOX_TOKEN en el archivo .env.");
+            }
+            if (e.getResponseCode() == 403) {
+                throw new ValidationException("Sin permisos para subir archivos a la carpeta configurada en Box.");
+            }
+            throw new ValidationException("Error en la comunicación con Box: " + e.getMessage());
         } catch (Exception e) {
-            LOGGER.error("Error subiendo imagen a Box", e);
+            LOGGER.error("Error inesperado subiendo imagen a Box", e);
             throw new ValidationException("No se pudo subir la imagen a Box: " + e.getMessage());
         }
     }
@@ -93,6 +107,34 @@ public class MarketplaceStorageService {
         } catch (Exception e) {
             LOGGER.error("Error subiendo audio a Box", e);
             throw new ValidationException("No se pudo subir el audio a Box: " + e.getMessage());
+        }
+    }
+
+    public String uploadProfileImage(Long userId, String fileName, byte[] content) {
+        BoxAPIConnection api = connectionSupplier.get();
+        try {
+            BoxFolder root = new BoxFolder(api, rootFolderId);
+            BoxFolder.Info profilesRootInfo = ensureFolder(root, PROFILES_ROOT);
+            
+            BoxFolder profilesRoot = new BoxFolder(api, profilesRootInfo.getID());
+            BoxFolder.Info userFolderInfo = ensureFolder(profilesRoot, "user_" + userId);
+
+            BoxFolder userFolder = new BoxFolder(api, userFolderInfo.getID());
+            try (InputStream is = new ByteArrayInputStream(content)) {
+                BoxFile.Info uploaded = userFolder.uploadFile(is, fileName);
+                
+                BoxFile file = new BoxFile(api, uploaded.getID());
+                BoxSharedLinkRequest sharedLinkRequest = new BoxSharedLinkRequest()
+                        .access(BoxSharedLink.Access.OPEN)
+                        .permissions(true, false);
+                
+                file.createSharedLink(sharedLinkRequest);
+                BoxFile.Info fileInfo = file.getInfo("shared_link");
+                return fileInfo.getSharedLink().getDownloadURL();
+            }
+        } catch (Exception e) {
+            LOGGER.error("Error subiendo imagen de perfil a Box", e);
+            throw new ValidationException("No se pudo subir la imagen de perfil a Box: " + e.getMessage());
         }
     }
 
