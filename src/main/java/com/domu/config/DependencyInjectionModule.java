@@ -78,11 +78,11 @@ public class DependencyInjectionModule extends AbstractModule {
     AppConfig appConfig() {
         Properties properties = loadProperties();
 
-        String dbUser = resolve(properties, "db.user", "DB_USER", DEFAULT_DB_USER);
-        String dbPassword = resolve(properties, "db.password", "DB_PASSWORD", DEFAULT_DB_PASSWORD);
-        String host = resolve(properties, "db.host", "DB_HOST", DEFAULT_DB_HOST);
-        String port = resolve(properties, "db.port", "DB_PORT", DEFAULT_DB_PORT);
-        String dbName = resolve(properties, "db.name", "DB_NAME", DEFAULT_DB_NAME);
+        String dbUser = resolve(properties, "db.user", "DB_USER", "domu");
+        String dbPassword = resolve(properties, "db.password", "DB_PASSWORD", "domu");
+        String host = resolve(properties, "db.host", "DB_HOST", "localhost");
+        String port = resolve(properties, "db.port", "DB_PORT", "3306");
+        String dbName = resolve(properties, "db.name", "DB_NAME", "domu");
         String jdbcUrl = resolve(properties, "db.uri", "DB_URI", "");
         if (jdbcUrl == null || jdbcUrl.isBlank()) {
             jdbcUrl = String.format(
@@ -96,13 +96,10 @@ public class DependencyInjectionModule extends AbstractModule {
                 jdbcUrl,
                 dbUser,
                 dbPassword,
-                resolve(properties, "jwt.secret", "JWT_SECRET", DEFAULT_JWT_SECRET),
-                resolve(properties, "jwt.issuer", "JWT_ISSUER", DEFAULT_JWT_ISSUER),
-                parseLong(resolve(properties, "jwt.expirationMinutes", "JWT_EXPIRATION_MINUTES",
-                        String.valueOf(DEFAULT_JWT_EXPIRATION_MINUTES)), DEFAULT_JWT_EXPIRATION_MINUTES),
-                parseInteger(
-                        resolve(properties, "server.port", "APP_SERVER_PORT", String.valueOf(AppConfig.DEFAULT_PORT)),
-                        AppConfig.DEFAULT_PORT),
+                resolve(properties, "jwt.secret", "JWT_SECRET", "change-this-secret"),
+                resolve(properties, "jwt.issuer", "JWT_ISSUER", "domu-backend"),
+                parseLong(resolve(properties, "jwt.expirationMinutes", "JWT_EXPIRATION_MINUTES", "60"), 60L),
+                parseInteger(resolve(properties, "server.port", "APP_SERVER_PORT", "7000"), 7000),
                 resolve(properties, "box.developerToken", "BOX_TOKEN", ""),
                 resolve(properties, "box.rootFolderId", "BOX_ROOT_FOLDER_ID", "0"),
                 resolve(properties, "mail.host", "MAIL_HOST", ""),
@@ -145,15 +142,6 @@ public class DependencyInjectionModule extends AbstractModule {
     com.domu.email.EmailService emailService(final AppConfig config) {
         return new com.domu.email.SmtpEmailService(config);
     }
-
-    private static final String DEFAULT_DB_HOST = "localhost";
-    private static final String DEFAULT_DB_PORT = "3306";
-    private static final String DEFAULT_DB_NAME = "domu";
-    private static final String DEFAULT_DB_USER = "domu";
-    private static final String DEFAULT_DB_PASSWORD = "domu";
-    private static final String DEFAULT_JWT_SECRET = "change-this-secret";
-    private static final String DEFAULT_JWT_ISSUER = "domu-backend";
-    private static final Long DEFAULT_JWT_EXPIRATION_MINUTES = 60L;
 
     private static Properties loadProperties() {
         Properties properties = new Properties();

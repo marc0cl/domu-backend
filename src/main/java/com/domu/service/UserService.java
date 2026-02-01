@@ -116,6 +116,75 @@ public class UserService {
         return userConfirmationRepository.findLatestTokenForUser(userId).orElse(null);
     }
 
+    public User adminCreateUser(
+            Long unitId,
+            Long roleId,
+            String firstName,
+            String lastName,
+            LocalDate birthDate,
+            String email,
+            String phone,
+            String documentNumber,
+            Boolean resident,
+            String rawPassword,
+            Long buildingId) {
+        validateRegistration(firstName, lastName, email, phone, documentNumber, resident, rawPassword);
+        
+        String normalizedEmail = email.toLowerCase();
+        userRepository.findByEmail(normalizedEmail).ifPresent(existing -> {
+            throw new UserAlreadyExistsException(normalizedEmail);
+        });
+
+        String passwordHash = passwordHasher.hash(rawPassword);
+        User user = new User(
+                null,
+                unitId,
+                roleId,
+                firstName.trim(),
+                lastName.trim(),
+                normalizedEmail,
+                phone,
+                birthDate,
+                passwordHash,
+                documentNumber,
+                resident,
+                LocalDateTime.now(),
+                "PENDING",
+                null,
+                null);
+        User saved = userRepository.save(user);
+        
+        if (buildingId != null) {
+            userBuildingRepository.addUserToBuilding(saved.id(), buildingId);
+        }
+        
+        // Generate confirmation token (7 days)
+        String token = java.util.UUID.randomUUID().toString();
+        userConfirmationRepository.insert(saved.id(), token, LocalDateTime.now().plusDays(7));
+        
+        return saved;
+    }
+
+    public void confirmUser(String token) {
+        UserConfirmationRepository.ConfirmationRow confirmation = userConfirmationRepository.findByToken(token)
+                .orElseThrow(() -> new ValidationException("Token de confirmación inválido"));
+
+        if (confirmation.confirmedAt() != null) {
+            throw new ValidationException("Este token ya ha sido utilizado");
+        }
+
+        if (confirmation.expiresAt().isBefore(LocalDateTime.now())) {
+            throw new ValidationException("El token ha expirado (validez de 7 días)");
+        }
+
+        userRepository.setStatus(confirmation.userId(), "ACTIVE");
+        userConfirmationRepository.markAsConfirmed(token);
+    }
+
+    public String getConfirmationToken(Long userId) {
+        return userConfirmationRepository.findLatestTokenForUser(userId).orElse(null);
+    }
+
     public User registerUser(
             Long unitId,
             Long roleId,
