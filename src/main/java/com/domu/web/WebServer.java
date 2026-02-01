@@ -16,8 +16,13 @@ import com.domu.dto.MarketItemResponse;
 import com.domu.dto.ChatMessageRequest;
 import com.domu.dto.ChatMessageResponse;
 import com.domu.dto.ChatRoomResponse;
+import com.domu.dto.ChatRequestResponse;
+import com.domu.dto.UserProfileResponse;
 import com.domu.dto.RegistrationRequest;
 import com.domu.dto.UserResponse;
+import com.domu.service.ChatRequestService;
+import com.domu.service.UserProfileService;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.domu.dto.AddCommonChargesRequest;
 import com.domu.dto.CommonPaymentRequest;
 import com.domu.dto.CreateCommonExpensePeriodRequest;
@@ -46,6 +51,9 @@ import com.domu.service.VisitService;
 import com.domu.service.VisitContactService;
 import com.domu.service.IncidentService;
 import com.domu.service.PollService;
+import com.domu.service.ChatRequestService;
+import com.domu.service.UserProfileService;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.domu.security.AuthenticationHandler;
 import com.domu.security.JwtProvider;
 import com.domu.service.InvalidCredentialsException;
@@ -97,6 +105,8 @@ public final class WebServer {
     private final AmenityService amenityService;
     private final MarketService marketService;
     private final ChatService chatService;
+    private final ChatRequestService chatRequestService;
+    private final UserProfileService userProfileService;
     private final ChatWebSocketHandler chatWebSocketHandler;
     private final com.domu.service.HousingUnitService housingUnitService;
     private final AuthenticationHandler authenticationHandler;
@@ -124,6 +134,8 @@ public final class WebServer {
             final AmenityService amenityService,
             final MarketService marketService,
             final ChatService chatService,
+            final ChatRequestService chatRequestService,
+            final UserProfileService userProfileService,
             final ChatWebSocketHandler chatWebSocketHandler,
             final com.domu.service.HousingUnitService housingUnitService,
             final AuthenticationHandler authenticationHandler,
@@ -146,6 +158,8 @@ public final class WebServer {
         this.amenityService = amenityService;
         this.marketService = marketService;
         this.chatService = chatService;
+        this.chatRequestService = chatRequestService;
+        this.userProfileService = userProfileService;
         this.chatWebSocketHandler = chatWebSocketHandler;
         this.housingUnitService = housingUnitService;
         this.authenticationHandler = authenticationHandler;
@@ -1050,6 +1064,40 @@ public final class WebServer {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             Long roomId = Long.parseLong(ctx.pathParam("roomId"));
             ctx.json(chatService.getMessages(roomId, 50));
+        });
+
+        // ==================== CHAT REQUESTS & PROFILES ====================
+
+        javalin.get("/api/users/{id}/profile", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long targetUserId = Long.parseLong(ctx.pathParam("id"));
+            Long buildingId = validateSelectedBuilding(ctx, user);
+            ctx.json(userProfileService.getProfile(targetUserId, buildingId));
+        });
+
+        javalin.get("/api/chat/requests/me", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(chatRequestService.getPendingRequests(user.id()));
+        });
+
+        javalin.post("/api/chat/requests", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long buildingId = validateSelectedBuilding(ctx, user);
+            
+            Map<String, Object> body = ctx.bodyAsClass(new TypeReference<Map<String, Object>>() {});
+            Long receiverId = Long.parseLong(body.get("receiverId").toString());
+            Long itemId = body.get("itemId") != null ? Long.parseLong(body.get("itemId").toString()) : null;
+            String message = (String) body.get("message");
+
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(Map.of("id", chatRequestService.createRequest(user.id(), receiverId, buildingId, itemId, message)));
+        });
+
+        javalin.put("/api/chat/requests/{id}/status", ctx -> {
+            Long requestId = Long.parseLong(ctx.pathParam("id"));
+            Map<String, String> body = ctx.bodyAsClass(new TypeReference<Map<String, String>>() {});
+            chatRequestService.updateRequestStatus(requestId, body.get("status"));
+            ctx.status(HttpStatus.NO_CONTENT);
         });
     }
 

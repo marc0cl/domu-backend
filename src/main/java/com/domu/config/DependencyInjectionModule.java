@@ -49,6 +49,8 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(HousingUnitService.class).in(Scopes.SINGLETON);
         bind(MarketService.class).in(Scopes.SINGLETON);
         bind(ChatService.class).in(Scopes.SINGLETON);
+        bind(ChatRequestService.class).in(Scopes.SINGLETON);
+        bind(UserProfileService.class).in(Scopes.SINGLETON);
         bind(MarketplaceStorageService.class).in(Scopes.SINGLETON);
         
         bind(UserRepository.class).in(Scopes.SINGLETON);
@@ -62,7 +64,8 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(PollRepository.class).in(Scopes.SINGLETON);
         bind(AmenityRepository.class).in(Scopes.SINGLETON);
         bind(HousingUnitRepository.class).in(Scopes.SINGLETON);
-        bind(MarketRepository.class).in(Scopes.SINGLETON);
+        bind(ChatRequestRepository.class).in(Scopes.SINGLETON);
+        bind(com.domu.database.MarketRepository.class).in(Scopes.SINGLETON);
         bind(ChatRepository.class).in(Scopes.SINGLETON);
         
         bind(ChatWebSocketHandler.class).in(Scopes.SINGLETON);
