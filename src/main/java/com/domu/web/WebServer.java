@@ -18,6 +18,7 @@ import com.domu.dto.CreateCommonExpensePeriodRequest;
 import com.domu.dto.CreateVisitRequest;
 import com.domu.dto.VisitContactRequest;
 import com.domu.dto.VisitFromContactRequest;
+import com.domu.dto.VisitorQrRequest;
 import com.domu.dto.BuildingSummaryResponse;
 import com.domu.dto.IncidentRequest;
 import com.domu.dto.CommunityRegistrationDocument;
@@ -780,6 +781,14 @@ public final class WebServer {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.status(HttpStatus.CREATED);
             ctx.json(visitContactService.registerFromContact(user, contactId, request));
+        });
+
+        javalin.post("/api/visits/qr-check", ctx -> {
+            VisitorQrRequest request = ctx.bodyValidator(VisitorQrRequest.class)
+                    .check(r -> r.getRun() != null && !r.getRun().isBlank(), "RUN es requerido")
+                    .get();
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(visitService.processQrScan(user, request));
         });
 
         javalin.post("/api/visits/{authorizationId}/check-in", ctx -> {

@@ -13,6 +13,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.domu.dto.VisitorQrRequest;
+import com.domu.dto.VisitorQrResponse;
+
 public class VisitService {
 
     private static final Integer DEFAULT_VALID_MINUTES = 120;
@@ -23,6 +26,36 @@ public class VisitService {
     @Inject
     public VisitService(VisitRepository visitRepository) {
         this.visitRepository = visitRepository;
+    }
+
+    public VisitorQrResponse processQrScan(User user, VisitorQrRequest request) {
+        if (request == null || request.getRun() == null) {
+            throw new ValidationException("Datos del QR inválidos (falta RUN)");
+        }
+        
+        // Solo admins y conserjes pueden escanear
+        if (!isConcierge(user) && !isAdmin(user)) {
+             throw new UnauthorizedResponse("No tienes permiso para escanear documentos");
+        }
+
+        String normalizedDocument = normalizeDocument(request.getRun());
+        
+        // Buscar si ya existe este visitante
+        var existingVisit = visitRepository.findLastVisitByDocument(normalizedDocument);
+        
+        if (existingVisit.isPresent()) {
+            return new VisitorQrResponse(
+                existingVisit.get().visitorName(),
+                normalizedDocument,
+                true
+            );
+        } else {
+            return new VisitorQrResponse(
+                null,
+                normalizedDocument,
+                false
+            );
+        }
     }
 
     public VisitResponse createVisit(User user, CreateVisitRequest request) {

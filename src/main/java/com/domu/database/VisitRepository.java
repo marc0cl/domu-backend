@@ -271,6 +271,39 @@ public class VisitRepository {
         }
     }
 
+    public Optional<VisitRow> findLastVisitByDocument(String documentNumber) {
+        // Normalizar input: quitar puntos y guiones para búsqueda pura
+        String cleanDocument = documentNumber.replace(".", "").replace("-", "").trim();
+        
+        // Query busca comparando el documento limpio en la BD con el input limpio
+        // Nota: Esto permite encontrar el registro ya sea que se guardó como "12.345.678-9" o "123456789"
+        String sql = """
+            SELECT * FROM visits 
+            WHERE REPLACE(REPLACE(visitor_document, '.', ''), '-', '') = ? 
+            ORDER BY created_at DESC LIMIT 1
+        """;
+        
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, cleanDocument);
+            try (ResultSet rs = statement.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.of(new VisitRow(
+                        rs.getLong("id"),
+                        rs.getString("visitor_name"),
+                        rs.getString("visitor_document"),
+                        rs.getString("visitor_type"),
+                        rs.getString("company"),
+                        rs.getTimestamp("created_at").toLocalDateTime()
+                    ));
+                }
+            }
+            return Optional.empty();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error buscando visita por documento", e);
+        }
+    }
+
     private String baseSummaryQuery() {
         return """
                 SELECT va.id AS authorization_id,
