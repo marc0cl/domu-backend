@@ -50,3 +50,4 @@ __pycache__/
 .gradle/
 /.gradle
 /build
+.gradle-local/

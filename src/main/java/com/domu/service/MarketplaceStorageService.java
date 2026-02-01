@@ -60,6 +60,22 @@ public class MarketplaceStorageService {
             try (InputStream is = new ByteArrayInputStream(content)) {
                 BoxFile.Info uploaded = itemFolder.uploadFile(is, fileName);
                 
+<<<<<<< HEAD
+                // Crear un Shared Link público con acceso total para visualización directa
+                BoxFile file = new BoxFile(api, uploaded.getID());
+                BoxSharedLinkRequest sharedLinkRequest = new BoxSharedLinkRequest()
+                        .access(BoxSharedLink.Access.OPEN)
+                        .permissions(true, true); // Permitir descarga y previsualización
+                
+                file.createSharedLink(sharedLinkRequest);
+                
+                // Obtener la información del archivo y asegurar que devolvemos la URL de descarga directa
+                BoxFile.Info fileInfo = file.getInfo("shared_link", "download_url");
+                String downloadUrl = fileInfo.getSharedLink().getDownloadURL();
+                
+                // Si por alguna razón downloadUrl es null, intentamos construirla o usar la estática estándar
+                return (downloadUrl != null) ? downloadUrl : "https://app.box.com/shared/static/" + uploaded.getID();
+=======
                 // Crear un Shared Link público
                 BoxFile file = new BoxFile(api, uploaded.getID());
                 BoxSharedLinkRequest sharedLinkRequest = new BoxSharedLinkRequest()
@@ -71,6 +87,7 @@ public class MarketplaceStorageService {
                 // Obtener la información del archivo incluyendo el shared link para extraer la URL de descarga
                 BoxFile.Info fileInfo = file.getInfo("shared_link");
                 return fileInfo.getSharedLink().getDownloadURL();
+>>>>>>> origin/develop
             }
         } catch (com.box.sdk.BoxAPIResponseException e) {
             LOGGER.error("Error de API de Box: code={}, message={}", e.getResponseCode(), e.getMessage());
