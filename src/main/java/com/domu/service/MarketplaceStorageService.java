@@ -109,7 +109,7 @@ public class MarketplaceStorageService {
             }
         } catch (Exception e) {
             LOGGER.error("Error subiendo audio a Box", e);
-            throw new ValidationException("No se pudo subir the audio a Box: " + e.getMessage());
+            throw new ValidationException("No se pudo subir el audio a Box: " + e.getMessage());
         }
     }
 
