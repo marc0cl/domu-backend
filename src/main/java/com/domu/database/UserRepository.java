@@ -45,18 +45,30 @@ public class UserRepository {
         }
     }
 
-    public void updatePassword(Long id, String passwordHash) {
+    public void updatePassword(Long id, String hash) {
         String sql = "UPDATE users SET password_hash = ? WHERE id = ?";
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setString(1, passwordHash);
+            statement.setString(1, hash);
             statement.setLong(2, id);
             int updated = statement.executeUpdate();
             if (updated == 0) {
                 throw new RepositoryException("No user updated");
             }
         } catch (SQLException e) {
-            throw new RepositoryException("Error updating password", e);
+            throw new RepositoryException("Error updating user password", e);
+        }
+    }
+
+    public void setStatus(Long id, String status) {
+        String sql = "UPDATE users SET status = ? WHERE id = ?";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, status);
+            statement.setLong(2, id);
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error updating user status", e);
         }
     }
 

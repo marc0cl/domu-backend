@@ -12,6 +12,7 @@ public record IncidentResponse(
                 String category,
                 String priority,
                 String status,
+                Long assignedToUserId,
                 LocalDateTime createdAt,
                 LocalDateTime updatedAt) {
 }
