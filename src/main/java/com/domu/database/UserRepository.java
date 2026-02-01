@@ -45,18 +45,30 @@ public class UserRepository {
         }
     }
 
-    public void updatePassword(Long id, String passwordHash) {
+    public void updatePassword(Long id, String hash) {
         String sql = "UPDATE users SET password_hash = ? WHERE id = ?";
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setString(1, passwordHash);
+            statement.setString(1, hash);
             statement.setLong(2, id);
             int updated = statement.executeUpdate();
             if (updated == 0) {
                 throw new RepositoryException("No user updated");
             }
         } catch (SQLException e) {
-            throw new RepositoryException("Error updating password", e);
+            throw new RepositoryException("Error updating user password", e);
+        }
+    }
+
+    public void setStatus(Long id, String status) {
+        String sql = "UPDATE users SET status = ? WHERE id = ?";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, status);
+            statement.setLong(2, id);
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error updating user status", e);
         }
     }
 
@@ -87,7 +99,7 @@ public class UserRepository {
     }
 
     public Optional<User> findByEmail(String email) {
-        String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status FROM users WHERE email = ?";
+        String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status, bio, avatar_box_id FROM users WHERE email = ?";
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, email);
@@ -103,7 +115,7 @@ public class UserRepository {
     }
 
     public Optional<User> findById(Long id) {
-        String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status FROM users WHERE id = ?";
+        String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status, bio, avatar_box_id FROM users WHERE id = ?";
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, id);
@@ -119,7 +131,7 @@ public class UserRepository {
     }
 
     public User save(User user) {
-        String sql = "INSERT INTO users (unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO users (unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, status, bio, avatar_box_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             if (user.unitId() != null) {
@@ -149,6 +161,8 @@ public class UserRepository {
             } else {
                 statement.setString(11, "ACTIVE");
             }
+            statement.setString(12, user.bio());
+            statement.setString(13, user.avatarBoxId());
 
             statement.executeUpdate();
             try (ResultSet generatedKeys = statement.getGeneratedKeys()) {
@@ -250,6 +264,8 @@ public class UserRepository {
         java.sql.Timestamp createdAtRaw = resultSet.getTimestamp("created_at");
         java.time.LocalDateTime createdAt = createdAtRaw != null ? createdAtRaw.toLocalDateTime() : null;
         String status = resultSet.getString("status");
+        String bio = resultSet.getString("bio");
+        String avatarBoxId = resultSet.getString("avatar_box_id");
         return new User(
                 id,
                 unitId,
@@ -263,6 +279,8 @@ public class UserRepository {
                 documentNumber,
                 resident,
                 createdAt,
-                status);
+                status,
+                bio,
+                avatarBoxId);
     }
 }

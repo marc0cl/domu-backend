@@ -1,33 +1,10 @@
 package com.domu.config;
 
-import com.domu.database.BuildingRepository;
-import com.domu.database.CommonExpenseRepository;
-import com.domu.database.DataSourceFactory;
-import com.domu.database.UserRepository;
-import com.domu.database.UserBuildingRepository;
-import com.domu.database.VisitRepository;
-import com.domu.database.VisitContactRepository;
-import com.domu.database.IncidentRepository;
-import com.domu.database.PollRepository;
-import com.domu.database.AmenityRepository;
-import com.domu.database.HousingUnitRepository;
-import com.domu.security.AuthenticationHandler;
-import com.domu.security.BCryptPasswordHasher;
-import com.domu.security.JwtProvider;
-import com.domu.security.PasswordHasher;
-import com.domu.service.BuildingService;
-import com.domu.service.CommonExpensePdfService;
-import com.domu.service.CommonExpenseReceiptStorageService;
-import com.domu.service.CommonExpenseService;
-import com.domu.service.CommunityRegistrationStorageService;
-import com.domu.service.VisitService;
-import com.domu.service.VisitContactService;
-import com.domu.service.IncidentService;
-import com.domu.service.PollService;
-import com.domu.service.AmenityService;
-import com.domu.service.HousingUnitService;
-import com.domu.service.UserService;
+import com.domu.database.*;
+import com.domu.security.*;
+import com.domu.service.*;
 import com.domu.web.WebServer;
+import com.domu.web.ChatWebSocketHandler;
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
@@ -70,16 +47,28 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(PollService.class).in(Scopes.SINGLETON);
         bind(AmenityService.class).in(Scopes.SINGLETON);
         bind(HousingUnitService.class).in(Scopes.SINGLETON);
+        bind(MarketService.class).in(Scopes.SINGLETON);
+        bind(ChatService.class).in(Scopes.SINGLETON);
+        bind(ChatRequestService.class).in(Scopes.SINGLETON);
+        bind(UserProfileService.class).in(Scopes.SINGLETON);
+        bind(MarketplaceStorageService.class).in(Scopes.SINGLETON);
+        
         bind(UserRepository.class).in(Scopes.SINGLETON);
         bind(CommonExpenseRepository.class).in(Scopes.SINGLETON);
         bind(BuildingRepository.class).in(Scopes.SINGLETON);
         bind(UserBuildingRepository.class).in(Scopes.SINGLETON);
+        bind(UserConfirmationRepository.class).in(Scopes.SINGLETON);
         bind(VisitRepository.class).in(Scopes.SINGLETON);
         bind(VisitContactRepository.class).in(Scopes.SINGLETON);
         bind(IncidentRepository.class).in(Scopes.SINGLETON);
         bind(PollRepository.class).in(Scopes.SINGLETON);
         bind(AmenityRepository.class).in(Scopes.SINGLETON);
         bind(HousingUnitRepository.class).in(Scopes.SINGLETON);
+        bind(ChatRequestRepository.class).in(Scopes.SINGLETON);
+        bind(com.domu.database.MarketRepository.class).in(Scopes.SINGLETON);
+        bind(ChatRepository.class).in(Scopes.SINGLETON);
+        
+        bind(ChatWebSocketHandler.class).in(Scopes.SINGLETON);
         bind(AuthenticationHandler.class).in(Scopes.SINGLETON);
         bind(PasswordHasher.class).to(BCryptPasswordHasher.class).in(Scopes.SINGLETON);
     }
@@ -89,11 +78,11 @@ public class DependencyInjectionModule extends AbstractModule {
     AppConfig appConfig() {
         Properties properties = loadProperties();
 
-        String dbUser = resolve(properties, "db.user", "DB_USER", DEFAULT_DB_USER);
-        String dbPassword = resolve(properties, "db.password", "DB_PASSWORD", DEFAULT_DB_PASSWORD);
-        String host = resolve(properties, "db.host", "DB_HOST", DEFAULT_DB_HOST);
-        String port = resolve(properties, "db.port", "DB_PORT", DEFAULT_DB_PORT);
-        String dbName = resolve(properties, "db.name", "DB_NAME", DEFAULT_DB_NAME);
+        String dbUser = resolve(properties, "db.user", "DB_USER", "domu");
+        String dbPassword = resolve(properties, "db.password", "DB_PASSWORD", "domu");
+        String host = resolve(properties, "db.host", "DB_HOST", "localhost");
+        String port = resolve(properties, "db.port", "DB_PORT", "3306");
+        String dbName = resolve(properties, "db.name", "DB_NAME", "domu");
         String jdbcUrl = resolve(properties, "db.uri", "DB_URI", "");
         if (jdbcUrl == null || jdbcUrl.isBlank()) {
             jdbcUrl = String.format(
@@ -107,13 +96,10 @@ public class DependencyInjectionModule extends AbstractModule {
                 jdbcUrl,
                 dbUser,
                 dbPassword,
-                resolve(properties, "jwt.secret", "JWT_SECRET", DEFAULT_JWT_SECRET),
-                resolve(properties, "jwt.issuer", "JWT_ISSUER", DEFAULT_JWT_ISSUER),
-                parseLong(resolve(properties, "jwt.expirationMinutes", "JWT_EXPIRATION_MINUTES",
-                        String.valueOf(DEFAULT_JWT_EXPIRATION_MINUTES)), DEFAULT_JWT_EXPIRATION_MINUTES),
-                parseInteger(
-                        resolve(properties, "server.port", "APP_SERVER_PORT", String.valueOf(AppConfig.DEFAULT_PORT)),
-                        AppConfig.DEFAULT_PORT),
+                resolve(properties, "jwt.secret", "JWT_SECRET", "change-this-secret"),
+                resolve(properties, "jwt.issuer", "JWT_ISSUER", "domu-backend"),
+                parseLong(resolve(properties, "jwt.expirationMinutes", "JWT_EXPIRATION_MINUTES", "60"), 60L),
+                parseInteger(resolve(properties, "server.port", "APP_SERVER_PORT", "7000"), 7000),
                 resolve(properties, "box.developerToken", "BOX_TOKEN", ""),
                 resolve(properties, "box.rootFolderId", "BOX_ROOT_FOLDER_ID", "0"),
                 resolve(properties, "mail.host", "MAIL_HOST", ""),
@@ -157,15 +143,6 @@ public class DependencyInjectionModule extends AbstractModule {
         return new com.domu.email.SmtpEmailService(config);
     }
 
-    private static final String DEFAULT_DB_HOST = "localhost";
-    private static final String DEFAULT_DB_PORT = "3306";
-    private static final String DEFAULT_DB_NAME = "domu";
-    private static final String DEFAULT_DB_USER = "domu";
-    private static final String DEFAULT_DB_PASSWORD = "domu";
-    private static final String DEFAULT_JWT_SECRET = "change-this-secret";
-    private static final String DEFAULT_JWT_ISSUER = "domu-backend";
-    private static final Long DEFAULT_JWT_EXPIRATION_MINUTES = 60L;
-
     private static Properties loadProperties() {
         Properties properties = new Properties();
         try (InputStream input = DependencyInjectionModule.class.getClassLoader()
@@ -173,10 +150,7 @@ public class DependencyInjectionModule extends AbstractModule {
             if (input != null) {
                 properties.load(input);
             }
-        } catch (IOException ignored) {
-            // Use defaults and environment variables when the properties file is not
-            // available.
-        }
+        } catch (IOException ignored) {}
         return properties;
     }
 
@@ -186,53 +160,32 @@ public class DependencyInjectionModule extends AbstractModule {
         if (resolvedFromPlaceholder != null && !resolvedFromPlaceholder.isBlank()) {
             return resolvedFromPlaceholder;
         }
-
         String envValue = System.getenv(envKey);
         if (envValue != null && !envValue.isBlank()) {
             return envValue;
         }
-
         if (rawValue != null && !rawValue.isBlank() && !rawValue.startsWith("${")) {
             return rawValue;
         }
-
         return defaultValue;
     }
 
     private static String resolvePlaceholder(String rawValue) {
-        if (rawValue == null) {
-            return null;
-        }
+        if (rawValue == null) return null;
         if (rawValue.startsWith("${") && rawValue.endsWith("}")) {
             String envKey = rawValue.substring(2, rawValue.length() - 1);
-            String envValue = System.getenv(envKey);
-            if (envValue != null && !envValue.isBlank()) {
-                return envValue;
-            }
-            return null;
+            return System.getenv(envKey);
         }
         return null;
     }
 
     private static Long parseLong(String rawValue, Long defaultValue) {
-        if (rawValue == null || rawValue.isBlank()) {
-            return defaultValue;
-        }
-        try {
-            return Long.parseLong(rawValue);
-        } catch (NumberFormatException ex) {
-            return defaultValue;
-        }
+        if (rawValue == null || rawValue.isBlank()) return defaultValue;
+        try { return Long.parseLong(rawValue); } catch (NumberFormatException ex) { return defaultValue; }
     }
 
     private static Integer parseInteger(String rawValue, Integer defaultValue) {
-        if (rawValue == null || rawValue.isBlank()) {
-            return defaultValue;
-        }
-        try {
-            return Integer.parseInt(rawValue);
-        } catch (NumberFormatException ex) {
-            return defaultValue;
-        }
+        if (rawValue == null || rawValue.isBlank()) return defaultValue;
+        try { return Integer.parseInt(rawValue); } catch (NumberFormatException ex) { return defaultValue; }
     }
 }

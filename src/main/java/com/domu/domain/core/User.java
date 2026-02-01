@@ -17,7 +17,9 @@ public record User(
         String documentNumber,
         Boolean resident,
         LocalDateTime createdAt,
-        String status
+        String status,
+        String bio,
+        String avatarBoxId
 ) {
     public User {
         Objects.requireNonNull(firstName, "firstName");
@@ -40,7 +42,9 @@ public record User(
                 documentNumber,
                 resident,
                 createdAt,
-                status
+                status,
+                bio,
+                avatarBoxId
         );
     }
 }
