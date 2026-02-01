@@ -198,4 +198,29 @@ public class ChatRepository {
                 .createdAt(rs.getTimestamp("created_at").toLocalDateTime())
                 .build();
     }
+
+    public Optional<Long> findDirectChatRoom(Long userId1, Long userId2) {
+        String sql = """
+                SELECT r.id
+                FROM chat_room r
+                JOIN chat_participant p1 ON r.id = p1.room_id
+                JOIN chat_participant p2 ON r.id = p2.room_id
+                WHERE p1.user_id = ? AND p2.user_id = ?
+                ORDER BY r.last_message_at DESC
+                LIMIT 1
+                """;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, userId1);
+            stmt.setLong(2, userId2);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.of(rs.getLong("id"));
+                }
+                return Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error buscando chat directo", e);
+        }
+    }
 }

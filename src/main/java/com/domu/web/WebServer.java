@@ -1147,9 +1147,12 @@ public final class WebServer {
 
         javalin.get("/api/users/{id}/profile", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null) {
+                throw new UnauthorizedResponse();
+            }
             Long targetUserId = Long.parseLong(ctx.pathParam("id"));
             Long buildingId = validateSelectedBuilding(ctx, user);
-            ctx.json(userProfileService.getProfile(targetUserId, buildingId));
+            ctx.json(userProfileService.getProfile(targetUserId, buildingId, user.id()));
         });
 
         javalin.get("/api/chat/requests/me", ctx -> {
