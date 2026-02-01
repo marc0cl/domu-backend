@@ -42,9 +42,17 @@ public class ChatRequestRepository {
 
     public List<ChatRequestResponse> findPendingByReceiver(Long receiverId) {
         String sql = """
-                SELECT cr.*, u.first_name, u.last_name, mi.title as item_title
+                SELECT cr.*, 
+                       u_send.first_name as sender_first, u_send.last_name as sender_last, u_send.privacy_avatar_box_id as sender_photo,
+                       hu_send.number as sender_unit,
+                       u_recv.privacy_avatar_box_id as receiver_photo,
+                       hu_recv.number as receiver_unit,
+                       mi.title as item_title
                 FROM chat_request cr
-                JOIN users u ON cr.sender_id = u.id
+                JOIN users u_send ON cr.sender_id = u_send.id
+                LEFT JOIN housing_units hu_send ON u_send.unit_id = hu_send.id
+                JOIN users u_recv ON cr.receiver_id = u_recv.id
+                LEFT JOIN housing_units hu_recv ON u_recv.unit_id = hu_recv.id
                 LEFT JOIN market_item mi ON cr.item_id = mi.id
                 WHERE cr.receiver_id = ? AND cr.status = 'PENDING'
                 ORDER BY cr.created_at DESC
@@ -78,9 +86,17 @@ public class ChatRequestRepository {
 
     public Optional<ChatRequestResponse> findById(Long id) {
         String sql = """
-                SELECT cr.*, u.first_name, u.last_name, mi.title as item_title
+                SELECT cr.*, 
+                       u_send.first_name as sender_first, u_send.last_name as sender_last, u_send.privacy_avatar_box_id as sender_photo,
+                       hu_send.number as sender_unit,
+                       u_recv.privacy_avatar_box_id as receiver_photo,
+                       hu_recv.number as receiver_unit,
+                       mi.title as item_title
                 FROM chat_request cr
-                JOIN users u ON cr.sender_id = u.id
+                JOIN users u_send ON cr.sender_id = u_send.id
+                LEFT JOIN housing_units hu_send ON u_send.unit_id = hu_send.id
+                JOIN users u_recv ON cr.receiver_id = u_recv.id
+                LEFT JOIN housing_units hu_recv ON u_recv.unit_id = hu_recv.id
                 LEFT JOIN market_item mi ON cr.item_id = mi.id
                 WHERE cr.id = ?
                 """;
@@ -100,8 +116,12 @@ public class ChatRequestRepository {
         return ChatRequestResponse.builder()
                 .id(rs.getLong("id"))
                 .senderId(rs.getLong("sender_id"))
-                .senderName(rs.getString("first_name") + " " + rs.getString("last_name"))
+                .senderName(rs.getString("sender_first") + " " + rs.getString("sender_last"))
+                .senderUnitNumber(rs.getString("sender_unit"))
+                .senderPrivacyPhoto(rs.getString("sender_photo"))
                 .receiverId(rs.getLong("receiver_id"))
+                .receiverUnitNumber(rs.getString("receiver_unit"))
+                .receiverPrivacyPhoto(rs.getString("receiver_photo"))
                 .buildingId(rs.getLong("building_id"))
                 .itemId(rs.getObject("item_id") != null ? rs.getLong("item_id") : null)
                 .itemTitle(rs.getString("item_title"))

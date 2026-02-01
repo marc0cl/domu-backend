@@ -29,6 +29,10 @@ public class ChatService {
         return repository.findMessagesByRoom(roomId, limit);
     }
 
+    public List<Long> getParticipantIds(Long roomId) {
+        return repository.getParticipantIds(roomId);
+    }
+
     public Long startConversation(Long buildingId, Long buyerId, Long sellerId, Long itemId) {
         Long roomId = repository.createRoom(buildingId, itemId);
         repository.addParticipant(roomId, buyerId);

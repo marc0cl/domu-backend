@@ -57,13 +57,29 @@ public class ChatWebSocketHandler {
                 Map<String, Object> payload = objectMapper.readValue(message, new TypeReference<Map<String, Object>>() {});
                 String type = (String) payload.get("type");
                 
-                if ("TYPING".equals(type)) {
-                    // Lógica de retransmisión de estado de escritura
-                    // Por ahora solo log para evitar advertencias de variables no usadas
-                    LOGGER.debug("User typing event received");
+                if ("SEND_MSG".equals(type)) {
+                    Long userId = null;
+                    for (Map.Entry<Long, WsContext> entry : userSessions.entrySet()) {
+                        if (entry.getValue().equals(ctx)) {
+                            userId = entry.getKey();
+                            break;
+                        }
+                    }
+                    if (userId == null) return;
+
+                    Long roomId = Long.parseLong(payload.get("roomId").toString());
+                    String content = (String) payload.get("content");
+                    String msgType = (String) payload.get("msgType");
+
+                    ChatMessageResponse savedMsg = chatService.saveMessage(roomId, userId, content, msgType, null, null);
+                    
+                    List<Long> participants = chatService.getParticipantIds(roomId);
+                    notifyNewMessage(roomId, savedMsg, participants);
+                } else if ("TYPING".equals(type)) {
+                    // TODO: Handle typing
                 }
             } catch (Exception e) {
-                LOGGER.error("Error processing WS message", e);
+                LOGGER.error("Error handling WS message", e);
             }
         });
     }

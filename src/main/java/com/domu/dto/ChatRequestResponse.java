@@ -14,5 +14,9 @@ public record ChatRequestResponse(
     String itemTitle,
     String status,
     String initialMessage,
+    String senderUnitNumber,
+    String senderPrivacyPhoto,
+    String receiverUnitNumber,
+    String receiverPrivacyPhoto,
     LocalDateTime createdAt
 ) {}

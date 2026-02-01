@@ -11,5 +11,6 @@ public record UserProfileResponse(
     String bio,
     String avatarUrl,
     String unitIdentifier,
+    Long activeChatRoomId,
     List<MarketItemResponse> itemsForSale
 ) {}

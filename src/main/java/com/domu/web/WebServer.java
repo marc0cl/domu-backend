@@ -86,6 +86,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 import com.domu.email.EmailService;
 
 @Singleton
@@ -461,6 +463,26 @@ public final class WebServer {
             var buildings = loadBuildings(updated);
             Long activeBuildingId = resolveActiveBuildingId(updated, buildings);
             ctx.json(UserMapper.toResponse(updated, buildings, activeBuildingId));
+        });
+
+        javalin.post("/api/users/me/avatar", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            var file = ctx.uploadedFile("avatar");
+            if (file == null) {
+                throw new ValidationException("Archivo avatar es requerido");
+            }
+            userService.updateAvatar(user, file.filename(), file.content().readAllBytes());
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        javalin.post("/api/users/me/privacy-avatar", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            var file = ctx.uploadedFile("avatar");
+            if (file == null) {
+                throw new ValidationException("Archivo avatar es requerido");
+            }
+            userService.updatePrivacyAvatar(user, file.filename(), file.content().readAllBytes());
+            ctx.status(HttpStatus.NO_CONTENT);
         });
 
         javalin.post("/api/users/me/password", ctx -> {
@@ -1021,11 +1043,49 @@ public final class WebServer {
             ctx.json(marketService.listItems(selectedBuildingId, categoryId, status));
         });
 
+        javalin.get("/api/market/items/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            Long itemId = Long.parseLong(ctx.pathParam("id"));
+            ctx.json(marketService.getItem(itemId, selectedBuildingId));
+        });
+
+        javalin.put("/api/market/items/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long itemId = Long.parseLong(ctx.pathParam("id"));
+            
+            MarketItemRequest request = new MarketItemRequest();
+            request.setTitle(ctx.formParam("title"));
+            request.setDescription(ctx.formParam("description"));
+            request.setPrice(Double.parseDouble(ctx.formParam("price")));
+            request.setCategoryId(Long.parseLong(ctx.formParam("categoryId")));
+
+            // Procesar nuevas imágenes
+            List<UploadedFile> files = ctx.uploadedFiles("images");
+            java.util.List<com.domu.service.MarketService.ImageContent> imageList = new java.util.ArrayList<>();
+            for (UploadedFile file : files) {
+                imageList.add(new com.domu.service.MarketService.ImageContent(file.filename(), file.content().readAllBytes()));
+            }
+
+            // Procesar URLs eliminadas
+            String deletedJson = ctx.formParam("deletedImageUrls");
+            java.util.List<String> deletedList = deletedJson != null ? objectMapper.readValue(deletedJson, new TypeReference<List<String>>() {}) : null;
+
+            marketService.updateItem(itemId, user.id(), request, imageList, deletedList);
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        javalin.delete("/api/market/items/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long itemId = Long.parseLong(ctx.pathParam("id"));
+            marketService.deleteItem(itemId, user.id());
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
         javalin.post("/api/market/items", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             Long selectedBuildingId = validateSelectedBuilding(ctx, user);
             
-            // Multipart parsing para el item y la imagen
             MarketItemRequest request = new MarketItemRequest();
             request.setTitle(ctx.formParam("title"));
             request.setDescription(ctx.formParam("description"));
@@ -1033,12 +1093,18 @@ public final class WebServer {
             request.setCategoryId(Long.parseLong(ctx.formParam("categoryId")));
             request.setOriginalPriceLink(ctx.formParam("originalPriceLink"));
 
-            UploadedFile file = ctx.uploadedFile("image");
-            byte[] content = file != null ? file.content().readAllBytes() : null;
-            String fileName = file != null ? file.filename() : null;
+            List<UploadedFile> files = ctx.uploadedFiles("images");
+            java.util.List<com.domu.service.MarketService.ImageContent> imageList = new java.util.ArrayList<>();
+            
+            for (UploadedFile file : files) {
+                imageList.add(new com.domu.service.MarketService.ImageContent(
+                    file.filename(),
+                    file.content().readAllBytes()
+                ));
+            }
 
             ctx.status(HttpStatus.CREATED);
-            ctx.json(marketService.createItem(user.id(), selectedBuildingId, request, fileName, content));
+            ctx.json(marketService.createItem(user.id(), selectedBuildingId, request, imageList));
         });
 
         // ==================== CHAT ====================
@@ -1051,6 +1117,9 @@ public final class WebServer {
 
         javalin.post("/api/chat/rooms", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null) {
+                throw new UnauthorizedResponse();
+            }
             Long selectedBuildingId = validateSelectedBuilding(ctx, user);
             Long itemId = ctx.queryParam("itemId") != null ? Long.parseLong(ctx.queryParam("itemId")) : null;
             Long sellerId = Long.parseLong(ctx.queryParam("sellerId"));
@@ -1061,18 +1130,29 @@ public final class WebServer {
         });
 
         javalin.get("/api/chat/rooms/{roomId}/messages", ctx -> {
-            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             Long roomId = Long.parseLong(ctx.pathParam("roomId"));
             ctx.json(chatService.getMessages(roomId, 50));
+        });
+
+        javalin.get("/api/chat/neighbors", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null) {
+                throw new UnauthorizedResponse();
+            }
+            Long selectedBuildingId = ctx.attribute("selectedBuildingId");
+            ctx.json(userRepository.findNeighborsForChat(selectedBuildingId, user.id()));
         });
 
         // ==================== CHAT REQUESTS & PROFILES ====================
 
         javalin.get("/api/users/{id}/profile", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null) {
+                throw new UnauthorizedResponse();
+            }
             Long targetUserId = Long.parseLong(ctx.pathParam("id"));
             Long buildingId = validateSelectedBuilding(ctx, user);
-            ctx.json(userProfileService.getProfile(targetUserId, buildingId));
+            ctx.json(userProfileService.getProfile(targetUserId, buildingId, user.id()));
         });
 
         javalin.get("/api/chat/requests/me", ctx -> {
@@ -1082,6 +1162,9 @@ public final class WebServer {
 
         javalin.post("/api/chat/requests", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null) {
+                throw new UnauthorizedResponse();
+            }
             Long buildingId = validateSelectedBuilding(ctx, user);
             
             Map<String, Object> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, Object>>() {});
