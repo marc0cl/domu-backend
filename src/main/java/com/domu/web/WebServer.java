@@ -37,6 +37,9 @@ import com.domu.dto.CommunityRegistrationDocument;
 import com.domu.dto.UpdateProfileRequest;
 import com.domu.dto.ChangePasswordRequest;
 import com.domu.dto.IncidentStatusUpdateRequest;
+import com.domu.dto.ParcelRequest;
+import com.domu.dto.ParcelStatusUpdateRequest;
+import com.domu.dto.UnitSummaryResponse;
 import com.domu.dto.CreatePollRequest;
 import com.domu.dto.VoteRequest;
 import com.domu.dto.AmenityRequest;
@@ -52,6 +55,7 @@ import com.domu.service.VisitService;
 import com.domu.service.VisitContactService;
 import com.domu.service.IncidentService;
 import com.domu.service.PollService;
+import com.domu.service.ParcelService;
 import com.domu.service.ChatRequestService;
 import com.domu.service.UserProfileService;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -112,6 +116,7 @@ public final class WebServer {
     private final ChatService chatService;
     private final ChatRequestService chatRequestService;
     private final UserProfileService userProfileService;
+    private final ParcelService parcelService;
     private final ChatWebSocketHandler chatWebSocketHandler;
     private final com.domu.service.HousingUnitService housingUnitService;
     private final AuthenticationHandler authenticationHandler;
@@ -142,6 +147,7 @@ public final class WebServer {
             final ChatService chatService,
             final ChatRequestService chatRequestService,
             final UserProfileService userProfileService,
+            final ParcelService parcelService,
             final ChatWebSocketHandler chatWebSocketHandler,
             final com.domu.service.HousingUnitService housingUnitService,
             final AuthenticationHandler authenticationHandler,
@@ -167,6 +173,7 @@ public final class WebServer {
         this.chatService = chatService;
         this.chatRequestService = chatRequestService;
         this.userProfileService = userProfileService;
+        this.parcelService = parcelService;
         this.chatWebSocketHandler = chatWebSocketHandler;
         this.housingUnitService = housingUnitService;
         this.authenticationHandler = authenticationHandler;
@@ -418,6 +425,8 @@ public final class WebServer {
         javalin.before("/api/visit-contacts/*", authenticationHandler);
         javalin.before("/api/incidents", authenticationHandler);
         javalin.before("/api/incidents/*", authenticationHandler);
+        javalin.before("/api/parcels", authenticationHandler);
+        javalin.before("/api/parcels/*", authenticationHandler);
         javalin.before("/api/polls", authenticationHandler);
         javalin.before("/api/polls/*", authenticationHandler);
         javalin.before("/api/amenities", authenticationHandler);
@@ -451,6 +460,25 @@ public final class WebServer {
             Long activeBuildingId = resolveActiveBuildingId(user, buildings);
             UserResponse response = UserMapper.toResponseFromContext(ctx, buildings, activeBuildingId);
             ctx.json(response);
+        });
+
+        javalin.get("/api/users/me/unit", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.unitId() == null) {
+                ctx.status(HttpStatus.NO_CONTENT);
+                return;
+            }
+            var unit = housingUnitRepository.findById(user.unitId()).orElse(null);
+            if (unit == null) {
+                ctx.status(HttpStatus.NO_CONTENT);
+                return;
+            }
+            ctx.json(new UnitSummaryResponse(
+                    unit.id(),
+                    unit.buildingId(),
+                    unit.number(),
+                    unit.tower(),
+                    unit.floor()));
         });
 
         javalin.put("/api/users/me/profile", ctx -> {
@@ -923,6 +951,69 @@ public final class WebServer {
             IncidentAssignmentRequest request = ctx.bodyValidator(IncidentAssignmentRequest.class).get();
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.json(incidentService.updateAssignment(user, incidentId, request.getAssignedToUserId()));
+        });
+
+        // ==================== PARCELS (ENCOMIENDAS) ====================
+
+        javalin.get("/api/parcels/my", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            String status = ctx.queryParam("status");
+            ctx.json(parcelService.listMyParcels(user, status));
+        });
+
+        javalin.get("/api/parcels", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            String status = ctx.queryParam("status");
+            Long unitId = null;
+            String unitIdParam = ctx.queryParam("unitId");
+            if (unitIdParam != null && !unitIdParam.isBlank()) {
+                try {
+                    unitId = Long.parseLong(unitIdParam.trim());
+                } catch (NumberFormatException e) {
+                    throw new ValidationException("unitId debe ser numérico");
+                }
+            }
+            ctx.json(parcelService.listForBuilding(user, selectedBuildingId, status, unitId));
+        });
+
+        javalin.post("/api/parcels", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            ParcelRequest request = ctx.bodyValidator(ParcelRequest.class).get();
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(parcelService.create(user, selectedBuildingId, request));
+        });
+
+        javalin.put("/api/parcels/{parcelId}/status", ctx -> {
+            Long parcelId = Long.parseLong(ctx.pathParam("parcelId"));
+            ParcelStatusUpdateRequest request = ctx.bodyValidator(ParcelStatusUpdateRequest.class)
+                    .check(req -> req.getStatus() != null && !req.getStatus().isBlank(), "status es obligatorio")
+                    .get();
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            ctx.json(parcelService.updateStatus(user, parcelId, selectedBuildingId, request.getStatus()));
+        });
+
+        javalin.put("/api/parcels/{parcelId}", ctx -> {
+            Long parcelId = Long.parseLong(ctx.pathParam("parcelId"));
+            ParcelRequest request = ctx.bodyValidator(ParcelRequest.class).get();
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            ctx.json(parcelService.update(user, parcelId, selectedBuildingId, request));
+        });
+
+        javalin.delete("/api/parcels/{parcelId}", ctx -> {
+            Long parcelId = Long.parseLong(ctx.pathParam("parcelId"));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            parcelService.delete(user, parcelId, selectedBuildingId);
+            ctx.status(HttpStatus.NO_CONTENT);
         });
 
         javalin.get("/api/polls", ctx -> {

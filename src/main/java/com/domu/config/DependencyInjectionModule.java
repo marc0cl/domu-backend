@@ -53,7 +53,8 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(UserProfileService.class).in(Scopes.SINGLETON);
         bind(ForumService.class).in(Scopes.SINGLETON);
         bind(MarketplaceStorageService.class).in(Scopes.SINGLETON);
-        
+        bind(ParcelService.class).in(Scopes.SINGLETON);
+
         bind(UserRepository.class).in(Scopes.SINGLETON);
         bind(ForumRepository.class).in(Scopes.SINGLETON);
         bind(CommonExpenseRepository.class).in(Scopes.SINGLETON);
@@ -69,7 +70,8 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(ChatRequestRepository.class).in(Scopes.SINGLETON);
         bind(MarketRepository.class).in(Scopes.SINGLETON);
         bind(ChatRepository.class).in(Scopes.SINGLETON);
-        
+        bind(ParcelRepository.class).in(Scopes.SINGLETON);
+
         bind(ChatWebSocketHandler.class).in(Scopes.SINGLETON);
         bind(AuthenticationHandler.class).in(Scopes.SINGLETON);
         bind(PasswordHasher.class).to(BCryptPasswordHasher.class).in(Scopes.SINGLETON);
@@ -164,7 +166,8 @@ public class DependencyInjectionModule extends AbstractModule {
             if (input != null) {
                 properties.load(input);
             }
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+        }
         return properties;
     }
 
@@ -185,7 +188,8 @@ public class DependencyInjectionModule extends AbstractModule {
     }
 
     private static String resolvePlaceholder(String rawValue) {
-        if (rawValue == null) return null;
+        if (rawValue == null)
+            return null;
         if (rawValue.startsWith("${") && rawValue.endsWith("}")) {
             String envKey = rawValue.substring(2, rawValue.length() - 1);
             return System.getenv(envKey);
@@ -194,12 +198,22 @@ public class DependencyInjectionModule extends AbstractModule {
     }
 
     private static Long parseLong(String rawValue, Long defaultValue) {
-        if (rawValue == null || rawValue.isBlank()) return defaultValue;
-        try { return Long.parseLong(rawValue); } catch (NumberFormatException ex) { return defaultValue; }
+        if (rawValue == null || rawValue.isBlank())
+            return defaultValue;
+        try {
+            return Long.parseLong(rawValue);
+        } catch (NumberFormatException ex) {
+            return defaultValue;
+        }
     }
 
     private static Integer parseInteger(String rawValue, Integer defaultValue) {
-        if (rawValue == null || rawValue.isBlank()) return defaultValue;
-        try { return Integer.parseInt(rawValue); } catch (NumberFormatException ex) { return defaultValue; }
+        if (rawValue == null || rawValue.isBlank())
+            return defaultValue;
+        try {
+            return Integer.parseInt(rawValue);
+        } catch (NumberFormatException ex) {
+            return defaultValue;
+        }
     }
 }
