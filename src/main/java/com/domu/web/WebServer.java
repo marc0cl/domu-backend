@@ -62,6 +62,8 @@ import com.domu.service.UserAlreadyExistsException;
 import com.domu.service.UserService;
 import com.domu.service.ValidationException;
 import com.domu.database.HousingUnitRepository;
+import com.domu.service.ForumService;
+import com.domu.dto.CreateThreadRequest;
 import com.domu.database.UserBuildingRepository;
 import com.domu.database.BuildingRepository;
 import java.util.Map;
@@ -120,6 +122,7 @@ public final class WebServer {
     private final HousingUnitRepository housingUnitRepository;
     private final EmailService emailService;
     private final com.domu.database.UserRepository userRepository;
+    private final ForumService forumService;
     private final Javalin app;
     private Integer port = -1;
 
@@ -148,7 +151,8 @@ public final class WebServer {
             final BuildingRepository buildingRepository,
             final HousingUnitRepository housingUnitRepository,
             final EmailService emailService,
-            final com.domu.database.UserRepository userRepository) {
+            final com.domu.database.UserRepository userRepository,
+            final ForumService forumService) {
         this.dataSource = dataSource;
         this.userService = userService;
         this.commonExpenseService = commonExpenseService;
@@ -173,6 +177,7 @@ public final class WebServer {
         this.housingUnitRepository = housingUnitRepository;
         this.emailService = emailService;
         this.userRepository = userRepository;
+        this.forumService = forumService;
         this.app = createApp();
     }
 
@@ -421,6 +426,8 @@ public final class WebServer {
         javalin.before("/api/reservations/*", authenticationHandler);
         javalin.before("/api/market", authenticationHandler);
         javalin.before("/api/market/*", authenticationHandler);
+        javalin.before("/api/forum", authenticationHandler);
+        javalin.before("/api/forum/*", authenticationHandler);
         javalin.before("/api/chat", authenticationHandler);
         javalin.before("/api/chat/*", authenticationHandler);
 
@@ -508,7 +515,7 @@ public final class WebServer {
             }
             RegistrationRequest request = validateRegistration(ctx.bodyValidator(RegistrationRequest.class));
             Long selectedBuildingId = validateSelectedBuilding(ctx, current);
-            
+
             String rawPassword = request.getPassword();
             if (rawPassword == null || rawPassword.isBlank()) {
                 rawPassword = "1234567890";
@@ -526,7 +533,7 @@ public final class WebServer {
                     request.getResident(),
                     rawPassword,
                     selectedBuildingId);
-            
+
             var buildings = loadBuildings(created);
             Long activeBuildingId = resolveActiveBuildingId(created, buildings);
             sendUserCredentialsEmail(created, rawPassword);
@@ -732,7 +739,8 @@ public final class WebServer {
             var unit = user != null && user.unitId() != null
                     ? housingUnitRepository.findById(user.unitId()).orElse(null)
                     : null;
-            var detail = commonExpenseService.getPeriodDetailForUser(user, selectedBuildingId, periodId, building, unit);
+            var detail = commonExpenseService.getPeriodDetailForUser(user, selectedBuildingId, periodId, building,
+                    unit);
             byte[] pdf = commonExpensePdfService.buildResidentPeriodPdf(detail);
             String fileName = String.format("ggcc-%02d-%d.pdf", detail.month(), detail.year());
             ctx.header("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
@@ -1047,7 +1055,8 @@ public final class WebServer {
         javalin.get("/api/market/items", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             Long selectedBuildingId = validateSelectedBuilding(ctx, user);
-            Long categoryId = ctx.queryParam("categoryId") != null ? Long.parseLong(ctx.queryParam("categoryId")) : null;
+            Long categoryId = ctx.queryParam("categoryId") != null ? Long.parseLong(ctx.queryParam("categoryId"))
+                    : null;
             String status = ctx.queryParam("status");
             ctx.json(marketService.listItems(selectedBuildingId, categoryId, status));
         });
@@ -1062,7 +1071,7 @@ public final class WebServer {
         javalin.put("/api/market/items/{id}", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             Long itemId = Long.parseLong(ctx.pathParam("id"));
-            
+
             MarketItemRequest request = new MarketItemRequest();
             request.setTitle(ctx.formParam("title"));
             request.setDescription(ctx.formParam("description"));
@@ -1073,12 +1082,16 @@ public final class WebServer {
             List<UploadedFile> files = ctx.uploadedFiles("images");
             java.util.List<com.domu.service.MarketService.ImageContent> imageList = new java.util.ArrayList<>();
             for (UploadedFile file : files) {
-                imageList.add(new com.domu.service.MarketService.ImageContent(file.filename(), file.content().readAllBytes()));
+                imageList.add(new com.domu.service.MarketService.ImageContent(file.filename(),
+                        file.content().readAllBytes()));
             }
 
             // Procesar URLs eliminadas
             String deletedJson = ctx.formParam("deletedImageUrls");
-            java.util.List<String> deletedList = deletedJson != null ? objectMapper.readValue(deletedJson, new TypeReference<List<String>>() {}) : null;
+            java.util.List<String> deletedList = deletedJson != null
+                    ? objectMapper.readValue(deletedJson, new TypeReference<List<String>>() {
+                    })
+                    : null;
 
             marketService.updateItem(itemId, user.id(), request, imageList, deletedList);
             ctx.status(HttpStatus.NO_CONTENT);
@@ -1094,7 +1107,7 @@ public final class WebServer {
         javalin.post("/api/market/items", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             Long selectedBuildingId = validateSelectedBuilding(ctx, user);
-            
+
             MarketItemRequest request = new MarketItemRequest();
             request.setTitle(ctx.formParam("title"));
             request.setDescription(ctx.formParam("description"));
@@ -1104,12 +1117,11 @@ public final class WebServer {
 
             List<UploadedFile> files = ctx.uploadedFiles("images");
             java.util.List<com.domu.service.MarketService.ImageContent> imageList = new java.util.ArrayList<>();
-            
+
             for (UploadedFile file : files) {
                 imageList.add(new com.domu.service.MarketService.ImageContent(
-                    file.filename(),
-                    file.content().readAllBytes()
-                ));
+                        file.filename(),
+                        file.content().readAllBytes()));
             }
 
             ctx.status(HttpStatus.CREATED);
@@ -1132,7 +1144,7 @@ public final class WebServer {
             Long selectedBuildingId = validateSelectedBuilding(ctx, user);
             Long itemId = ctx.queryParam("itemId") != null ? Long.parseLong(ctx.queryParam("itemId")) : null;
             Long sellerId = Long.parseLong(ctx.queryParam("sellerId"));
-            
+
             Long roomId = chatService.startConversation(selectedBuildingId, user.id(), sellerId, itemId);
             ctx.status(HttpStatus.CREATED);
             ctx.json(Map.of("roomId", roomId));
@@ -1175,20 +1187,64 @@ public final class WebServer {
                 throw new UnauthorizedResponse();
             }
             Long buildingId = validateSelectedBuilding(ctx, user);
-            
-            Map<String, Object> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, Object>>() {});
+
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, Object>>() {
+            });
             Long receiverId = Long.parseLong(body.get("receiverId").toString());
             Long itemId = body.get("itemId") != null ? Long.parseLong(body.get("itemId").toString()) : null;
             String message = (String) body.get("message");
 
             ctx.status(HttpStatus.CREATED);
-            ctx.json(Map.of("id", chatRequestService.createRequest(user.id(), receiverId, buildingId, itemId, message)));
+            ctx.json(
+                    Map.of("id", chatRequestService.createRequest(user.id(), receiverId, buildingId, itemId, message)));
         });
 
         javalin.put("/api/chat/requests/{id}/status", ctx -> {
             Long requestId = Long.parseLong(ctx.pathParam("id"));
-            Map<String, String> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, String>>() {});
+            Map<String, String> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, String>>() {
+            });
             chatRequestService.updateRequestStatus(requestId, body.get("status"));
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        // ==================== FORUM ====================
+
+        javalin.get("/api/forum/threads", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            ctx.json(forumService.getThreads(selectedBuildingId));
+        });
+
+        javalin.post("/api/forum/threads", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            CreateThreadRequest request = ctx.bodyValidator(CreateThreadRequest.class).get();
+            forumService.createThread(selectedBuildingId, user, request);
+            ctx.status(HttpStatus.CREATED);
+        });
+
+        javalin.put("/api/forum/threads/{threadId}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long threadId = Long.parseLong(ctx.pathParam("threadId"));
+            CreateThreadRequest request = ctx.bodyValidator(CreateThreadRequest.class).get();
+            forumService.updateThread(threadId, user, request);
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        javalin.delete("/api/forum/threads/{threadId}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long threadId = Long.parseLong(ctx.pathParam("threadId"));
+            forumService.deleteThread(threadId, user);
             ctx.status(HttpStatus.NO_CONTENT);
         });
     }
@@ -1543,14 +1599,20 @@ public final class WebServer {
     }
 
     private Long resolveActiveBuildingId(User user, java.util.List<BuildingSummaryResponse> buildings) {
-        if (user != null && user.unitId() != null) {
-            Long buildingId = buildingRepository.findBuildingIdByUnitId(user.unitId());
-            if (buildingId != null) {
-                return buildingId;
-            }
-        }
         if (buildings != null && !buildings.isEmpty()) {
+            if (user != null && user.unitId() != null) {
+                Long buildingId = buildingRepository.findBuildingIdByUnitId(user.unitId());
+                if (buildingId != null) {
+                    boolean isInBuildings = buildings.stream().anyMatch(b -> b.id().equals(buildingId));
+                    if (isInBuildings) {
+                        return buildingId;
+                    }
+                }
+            }
             return buildings.get(0).id();
+        }
+        if (user != null && user.unitId() != null) {
+            return buildingRepository.findBuildingIdByUnitId(user.unitId());
         }
         return null;
     }
@@ -1570,7 +1632,36 @@ public final class WebServer {
         }
         Long selectedBuildingId = ctx.attribute("selectedBuildingId");
         String headerValue = ctx.header("X-Building-Id");
+
+        if (selectedBuildingId == null && headerValue != null && !headerValue.isBlank()) {
+            try {
+                selectedBuildingId = Long.parseLong(headerValue.trim());
+                ctx.attribute("selectedBuildingId", selectedBuildingId);
+            } catch (NumberFormatException e) {
+                LOGGER.warn("Invalid X-Building-Id header value in validateSelectedBuilding: {}", headerValue);
+            }
+        }
+
+        // Si no hay header, intentar resolver automáticamente
         if (selectedBuildingId == null) {
+            // 1. Por unidad (Residentes)
+            if (user.unitId() != null) {
+                Long userBuildingId = buildingRepository.findBuildingIdByUnitId(user.unitId());
+                if (userBuildingId != null) {
+                    LOGGER.debug("Resolved building {} from unit {} for user {}", userBuildingId, user.unitId(),
+                            user.id());
+                    return userBuildingId;
+                }
+            }
+
+            // 2. Si el usuario solo tiene acceso a UN edificio (Admin/Conserje único)
+            var buildings = loadBuildings(user);
+            if (buildings.size() == 1) {
+                Long singleBuildingId = buildings.get(0).id();
+                LOGGER.debug("Resolved single building {} for user {}", singleBuildingId, user.id());
+                return singleBuildingId;
+            }
+
             LOGGER.warn("validateSelectedBuilding: selectedBuildingId is null. Header X-Building-Id: {}, User: {}",
                     headerValue, user.id());
             return null;
@@ -1739,12 +1830,12 @@ public final class WebServer {
             if (user == null || user.email() == null || user.email().isBlank()) {
                 return;
             }
-            
+
             String token = userService.getConfirmationToken(user.id());
             String frontendUrl = resolveFrontendBaseUrl();
             String confirmUrl = frontendUrl + "/confirmar?token=" + token;
             String loginUrl = frontendUrl + "/login";
-            
+
             String subject = "Bienvenido a DOMU - Confirma tu cuenta";
             String roleLabel = "Usuario";
             if (user.roleId() != null && user.roleId() == 1L) {
@@ -1756,40 +1847,41 @@ public final class WebServer {
             } else if (user.roleId() != null && user.roleId() == 4L) {
                 roleLabel = "Funcionario";
             }
-            
+
             String html = """
                     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
                         <h2 style="color: #2c3e50;">¡Hola %s!</h2>
                         <p>Te damos la bienvenida a <strong>DOMU</strong>. Tu cuenta como <strong>%s</strong> ha sido registrada.</p>
-                        
+
                         <div style="background: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
                             <p style="margin: 0;"><strong>Tus credenciales de acceso temporal:</strong></p>
                             <p style="margin: 10px 0 0;"><strong>Correo:</strong> %s</p>
                             <p style="margin: 5px 0 0;"><strong>Contraseña:</strong> %s</p>
                         </div>
-                        
+
                         <p>Por seguridad, debes confirmar tu cuenta en los próximos <strong>7 días</strong> haciendo clic en el siguiente botón:</p>
-                        
+
                         <div style="text-align: center; margin: 30px 0;">
                             <a href="%s" style="background: #1abc9c; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Confirmar mi cuenta</a>
                         </div>
-                        
+
                         <p style="font-size: 0.9em; color: #7f8c8d;">Si el botón no funciona, puedes copiar y pegar este enlace en tu navegador:<br/>
                         <a href="%s">%s</a></p>
-                        
+
                         <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;" />
                         <p style="font-size: 0.8em; color: #95a5a6;">Una vez confirmada, podrás cambiar tu contraseña desde tu perfil en <a href="%s">DOMU</a>.</p>
                     </div>
-                    """.formatted(
-                    user.firstName() != null ? user.firstName() : "usuario",
-                    roleLabel,
-                    user.email(),
-                    rawPassword,
-                    confirmUrl,
-                    confirmUrl,
-                    confirmUrl,
-                    loginUrl);
-            
+                    """
+                    .formatted(
+                            user.firstName() != null ? user.firstName() : "usuario",
+                            roleLabel,
+                            user.email(),
+                            rawPassword,
+                            confirmUrl,
+                            confirmUrl,
+                            confirmUrl,
+                            loginUrl);
+
             emailService.sendHtml(user.email(), subject, html);
         } catch (Exception e) {
             LOGGER.warn("No se pudo enviar el correo de credenciales: {}", e.getMessage());

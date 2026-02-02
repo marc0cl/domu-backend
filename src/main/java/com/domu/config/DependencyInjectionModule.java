@@ -51,9 +51,11 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(ChatService.class).in(Scopes.SINGLETON);
         bind(ChatRequestService.class).in(Scopes.SINGLETON);
         bind(UserProfileService.class).in(Scopes.SINGLETON);
+        bind(ForumService.class).in(Scopes.SINGLETON);
         bind(MarketplaceStorageService.class).in(Scopes.SINGLETON);
         
         bind(UserRepository.class).in(Scopes.SINGLETON);
+        bind(ForumRepository.class).in(Scopes.SINGLETON);
         bind(CommonExpenseRepository.class).in(Scopes.SINGLETON);
         bind(BuildingRepository.class).in(Scopes.SINGLETON);
         bind(UserBuildingRepository.class).in(Scopes.SINGLETON);
