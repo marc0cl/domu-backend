@@ -3,8 +3,10 @@ package com.domu.service;
 import com.domu.database.UserRepository;
 import com.domu.database.UserBuildingRepository;
 import com.domu.database.UserConfirmationRepository;
+import com.domu.database.StaffRepository;
 import com.domu.domain.core.User;
 import com.domu.security.PasswordHasher;
+import com.domu.dto.StaffRequest;
 import com.google.inject.Inject;
 
 import java.time.LocalDate;
@@ -21,17 +23,20 @@ public class UserService {
     private final UserRepository userRepository;
     private final UserBuildingRepository userBuildingRepository;
     private final UserConfirmationRepository userConfirmationRepository;
+    private final StaffRepository staffRepository;
     private final PasswordHasher passwordHasher;
     private final MarketplaceStorageService storageService;
 
     @Inject
     public UserService(UserRepository userRepository, UserBuildingRepository userBuildingRepository,
             UserConfirmationRepository userConfirmationRepository,
+            StaffRepository staffRepository,
             PasswordHasher passwordHasher,
             MarketplaceStorageService storageService) {
         this.userRepository = userRepository;
         this.userBuildingRepository = userBuildingRepository;
         this.userConfirmationRepository = userConfirmationRepository;
+        this.staffRepository = staffRepository;
         this.passwordHasher = passwordHasher;
         this.storageService = storageService;
     }
@@ -87,6 +92,42 @@ public class UserService {
         
         if (buildingId != null) {
             userBuildingRepository.addUserToBuilding(saved.id(), buildingId);
+        }
+        
+        // Si el usuario es staff o conserje, crear registro en tabla staff
+        // Nota: Asumiendo que roleId 2 o 3 son staff/conserje, o puedes verificar por nombre del rol
+        // Por ahora, crearemos staff si roleId != 1 (admin) y != null y resident == false
+        if (buildingId != null && roleId != null && roleId != 1L && (resident == null || !resident)) {
+            try {
+                // Determinar posición basada en roleId o usar un valor por defecto
+                String position = "Personal"; // Valor por defecto
+                // Puedes agregar lógica aquí para determinar la posición según el roleId
+                
+                StaffRequest staffRequest = new StaffRequest(
+                    buildingId,
+                    firstName.trim(),
+                    lastName.trim(),
+                    documentNumber,
+                    email.toLowerCase(),
+                    phone,
+                    position,
+                    true // activo por defecto
+                );
+                
+                // Solo crear si no existe ya un staff con este RUT
+                staffRepository.findByRut(documentNumber).ifPresentOrElse(
+                    existing -> {
+                        // Ya existe, no hacer nada o actualizar
+                    },
+                    () -> {
+                        // Crear nuevo registro de staff
+                        staffRepository.insert(staffRequest);
+                    }
+                );
+            } catch (Exception e) {
+                // Log el error pero no fallar la creación del usuario
+                System.err.println("Error creando registro de staff: " + e.getMessage());
+            }
         }
         
         // Generate confirmation token (7 days)

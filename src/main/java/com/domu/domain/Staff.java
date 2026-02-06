@@ -21,7 +21,7 @@ import java.util.List;
 @Table(name = "staff")
 @Getter
 @Setter
-@JsonIgnoreProperties({"community", "tasks", "shifts"})
+@JsonIgnoreProperties({"building", "tasks", "shifts"})
 public class Staff {
 
     @Id
@@ -29,8 +29,8 @@ public class Staff {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "community_id", nullable = false)
-    private Community community;
+    @JoinColumn(name = "building_id", nullable = false)
+    private Building building;
 
     @Column(nullable = false, length = 120)
     private String firstName;

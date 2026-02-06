@@ -259,6 +259,21 @@ public class CommonExpenseService {
                 .toList();
     }
 
+    /**
+     * Verifica si el usuario tiene deuda pendiente en su unidad.
+     * Se considera deuda si hay cargos con estado PENDING o PARTIAL cuya fecha de vencimiento haya pasado.
+     */
+    public boolean hasDebt(User user) {
+        if (user == null || user.unitId() == null) {
+            return false;
+        }
+        List<UnitChargeResponse> charges = getChargesForUser(user);
+        LocalDate today = LocalDate.now();
+        return charges.stream()
+                .anyMatch(c -> ("PENDING".equals(c.status()) || "PARTIAL".equals(c.status()))
+                        && c.dueDate() != null && c.dueDate().isBefore(today));
+    }
+
     public CommonPaymentResponse payCharge(Long chargeId, User user, CommonPaymentRequest request) {
         if (request == null || request.getAmount() == null) {
             throw new ValidationException("El monto es obligatorio");
@@ -309,6 +324,50 @@ public class CommonExpenseService {
         );
 
         return new CommonPaymentResponse(saved.chargeId(), newPending, List.of(line));
+    }
+
+    /**
+     * Simula un pago online para fines de demostración (MVP/Tesis).
+     * Marca el cargo como pagado en su totalidad.
+     */
+    public CommonPaymentResponse payChargeSimulated(Long chargeId, User user) {
+        CommonExpenseRepository.ChargeBalanceRow balanceRow = repository.findChargeBalance(chargeId)
+                .orElseThrow(() -> new ValidationException("Cargo no encontrado"));
+
+        if ("RESIDENT".equalsIgnoreCase(balanceRow.charge().payerType())) {
+            if (user.unitId() == null || !Objects.equals(user.unitId(), balanceRow.charge().unitId())) {
+                throw new UnauthorizedResponse("No puedes pagar cargos de otra unidad");
+            }
+        }
+
+        BigDecimal paid = balanceRow.paidAmount() != null ? balanceRow.paidAmount() : BigDecimal.ZERO;
+        BigDecimal pending = balanceRow.charge().amount().subtract(paid);
+        if (pending.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ValidationException("El cargo ya está pagado");
+        }
+
+        CommonPayment payment = new CommonPayment(
+                null,
+                balanceRow.charge().unitId(),
+                balanceRow.charge().id(),
+                user.id(),
+                LocalDate.now(),
+                pending,
+                "SIMULATED_ONLINE",
+                "DEMO-" + System.currentTimeMillis(),
+                "CONFIRMED",
+                "Pago simulado (Mercado Pago Demo)"
+        );
+        CommonPayment saved = repository.insertPayment(payment);
+
+        CommonPaymentResponse.PaymentLine line = new CommonPaymentResponse.PaymentLine(
+                saved.amount(),
+                balanceRow.charge().description(),
+                saved.issuedAt(),
+                saved.receiptText()
+        );
+
+        return new CommonPaymentResponse(saved.chargeId(), BigDecimal.ZERO, List.of(line));
     }
 
     public CommonChargeReceiptUploadResult uploadChargeReceipt(Long chargeId,

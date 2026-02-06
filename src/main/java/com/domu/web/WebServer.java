@@ -56,6 +56,11 @@ import com.domu.service.VisitContactService;
 import com.domu.service.IncidentService;
 import com.domu.service.PollService;
 import com.domu.service.ParcelService;
+import com.domu.service.TaskService;
+import com.domu.service.StaffService;
+import com.domu.database.TaskRepository;
+import com.domu.dto.TaskRequest;
+import com.domu.dto.StaffRequest;
 import com.domu.service.ChatRequestService;
 import com.domu.service.UserProfileService;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -117,6 +122,8 @@ public final class WebServer {
     private final ChatRequestService chatRequestService;
     private final UserProfileService userProfileService;
     private final ParcelService parcelService;
+    private final TaskService taskService;
+    private final StaffService staffService;
     private final ChatWebSocketHandler chatWebSocketHandler;
     private final com.domu.service.HousingUnitService housingUnitService;
     private final AuthenticationHandler authenticationHandler;
@@ -148,6 +155,8 @@ public final class WebServer {
             final ChatRequestService chatRequestService,
             final UserProfileService userProfileService,
             final ParcelService parcelService,
+            final TaskService taskService,
+            final StaffService staffService,
             final ChatWebSocketHandler chatWebSocketHandler,
             final com.domu.service.HousingUnitService housingUnitService,
             final AuthenticationHandler authenticationHandler,
@@ -174,6 +183,8 @@ public final class WebServer {
         this.chatRequestService = chatRequestService;
         this.userProfileService = userProfileService;
         this.parcelService = parcelService;
+        this.taskService = taskService;
+        this.staffService = staffService;
         this.chatWebSocketHandler = chatWebSocketHandler;
         this.housingUnitService = housingUnitService;
         this.authenticationHandler = authenticationHandler;
@@ -439,6 +450,8 @@ public final class WebServer {
         javalin.before("/api/forum/*", authenticationHandler);
         javalin.before("/api/chat", authenticationHandler);
         javalin.before("/api/chat/*", authenticationHandler);
+        javalin.before("/api/tasks", authenticationHandler);
+        javalin.before("/api/tasks/*", authenticationHandler);
 
         // Extraer X-Building-Id header para filtrar datos por comunidad
         // La validación de acceso se hace en cada endpoint que use este valor
@@ -810,6 +823,13 @@ public final class WebServer {
             CommonPaymentRequest request = validatePayment(ctx.bodyValidator(CommonPaymentRequest.class));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ctx.json(commonExpenseService.payCharge(chargeId, user, request));
+        });
+
+        // RF_07: Pago simulado para demostración
+        javalin.post("/api/finance/charges/{chargeId}/pay-simulated", ctx -> {
+            Long chargeId = Long.parseLong(ctx.pathParam("chargeId"));
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(commonExpenseService.payChargeSimulated(chargeId, user));
         });
 
         javalin.post("/api/buildings/requests", ctx -> {
@@ -1336,6 +1356,139 @@ public final class WebServer {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             Long threadId = Long.parseLong(ctx.pathParam("threadId"));
             forumService.deleteThread(threadId, user);
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        // ==================== TASKS ====================
+
+        javalin.get("/api/tasks", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            ctx.json(taskService.listByBuilding(user, selectedBuildingId));
+        });
+
+        javalin.post("/api/tasks", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            TaskRequest request = ctx.bodyValidator(TaskRequest.class).get();
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(taskService.create(user, request));
+        });
+
+        javalin.put("/api/tasks/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long id = Long.parseLong(ctx.pathParam("id"));
+            TaskRequest request = ctx.bodyValidator(TaskRequest.class).get();
+            ctx.json(taskService.update(user, id, request));
+        });
+
+        javalin.delete("/api/tasks/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long id = Long.parseLong(ctx.pathParam("id"));
+            taskService.delete(user, id);
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        // ==================== STAFF ====================
+
+        javalin.get("/api/admin/staff", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden ver el personal", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            ctx.json(staffService.listByBuilding(user, selectedBuildingId));
+        });
+
+        javalin.get("/api/admin/staff/active", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden ver el personal", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            ctx.json(staffService.listActiveByBuilding(user, selectedBuildingId));
+        });
+
+        javalin.post("/api/admin/staff", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden crear personal", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            StaffRequest request = ctx.bodyValidator(StaffRequest.class).get();
+            // Asegurar que el buildingId del request coincida con el seleccionado
+            StaffRequest validatedRequest = new StaffRequest(
+                selectedBuildingId,
+                request.firstName(),
+                request.lastName(),
+                request.rut(),
+                request.email(),
+                request.phone(),
+                request.position(),
+                request.active()
+            );
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(staffService.create(user, validatedRequest));
+        });
+
+        javalin.put("/api/admin/staff/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden actualizar personal", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long id = Long.parseLong(ctx.pathParam("id"));
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            StaffRequest request = ctx.bodyValidator(StaffRequest.class).get();
+            // Asegurar que el buildingId del request coincida con el seleccionado
+            StaffRequest validatedRequest = new StaffRequest(
+                selectedBuildingId,
+                request.firstName(),
+                request.lastName(),
+                request.rut(),
+                request.email(),
+                request.phone(),
+                request.position(),
+                request.active()
+            );
+            ctx.json(staffService.update(user, id, validatedRequest));
+        });
+
+        javalin.delete("/api/admin/staff/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden eliminar personal", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long id = Long.parseLong(ctx.pathParam("id"));
+            staffService.delete(user, id);
             ctx.status(HttpStatus.NO_CONTENT);
         });
     }

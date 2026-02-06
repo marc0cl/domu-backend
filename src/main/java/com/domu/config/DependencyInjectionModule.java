@@ -54,6 +54,8 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(ForumService.class).in(Scopes.SINGLETON);
         bind(MarketplaceStorageService.class).in(Scopes.SINGLETON);
         bind(ParcelService.class).in(Scopes.SINGLETON);
+        bind(TaskService.class).in(Scopes.SINGLETON);
+        bind(StaffService.class).in(Scopes.SINGLETON);
 
         bind(UserRepository.class).in(Scopes.SINGLETON);
         bind(ForumRepository.class).in(Scopes.SINGLETON);
@@ -71,6 +73,8 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(MarketRepository.class).in(Scopes.SINGLETON);
         bind(ChatRepository.class).in(Scopes.SINGLETON);
         bind(ParcelRepository.class).in(Scopes.SINGLETON);
+        bind(TaskRepository.class).in(Scopes.SINGLETON);
+        bind(StaffRepository.class).in(Scopes.SINGLETON);
 
         bind(ChatWebSocketHandler.class).in(Scopes.SINGLETON);
         bind(AuthenticationHandler.class).in(Scopes.SINGLETON);
