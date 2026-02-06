@@ -33,7 +33,9 @@ dependencies {
     implementation(libs.jakartaValidation)
     implementation(libs.jakartaPersistence)
     implementation(libs.guice)
-
+    implementation(libs.boxSdk)
+    implementation("com.sun.mail:jakarta.mail:2.0.1")
+    
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)
 
@@ -44,6 +46,7 @@ dependencies {
     testImplementation(libs.assertj)
     testImplementation(libs.mockito)
     testImplementation(libs.javalinTesttools)
+    testImplementation("org.mockito:mockito-junit-jupiter:5.14.2")
 }
 
 application {

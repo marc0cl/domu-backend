@@ -1,15 +1,34 @@
 package com.domu.dto;
 
-import jakarta.validation.constraints.NotNull;
+public class ReservationRequest {
+    private Long timeSlotId;
+    private String reservationDate;
+    private String notes;
 
-import java.time.LocalDateTime;
+    public ReservationRequest() {
+    }
 
-public record ReservationRequest(
-        @NotNull Long amenityId,
-        @NotNull Long residentId,
-        @NotNull LocalDateTime startTime,
-        @NotNull LocalDateTime endTime,
-        Integer attendeesCount,
-        String status
-) {
+    public Long getTimeSlotId() {
+        return timeSlotId;
+    }
+
+    public void setTimeSlotId(Long timeSlotId) {
+        this.timeSlotId = timeSlotId;
+    }
+
+    public String getReservationDate() {
+        return reservationDate;
+    }
+
+    public void setReservationDate(String reservationDate) {
+        this.reservationDate = reservationDate;
+    }
+
+    public String getNotes() {
+        return notes;
+    }
+
+    public void setNotes(String notes) {
+        this.notes = notes;
+    }
 }

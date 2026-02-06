@@ -15,9 +15,9 @@ public class JwtProvider {
     private final Algorithm algorithm;
     private final JWTVerifier verifier;
     private final String issuer;
-    private final long expirationMinutes;
+    private final Long expirationMinutes;
 
-    public JwtProvider(String secret, String issuer, long expirationMinutes) {
+    public JwtProvider(String secret, String issuer, Long expirationMinutes) {
         this.algorithm = Algorithm.HMAC256(secret);
         this.verifier = JWT.require(algorithm)
                 .withIssuer(issuer)

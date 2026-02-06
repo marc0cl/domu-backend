@@ -9,13 +9,13 @@ import org.slf4j.LoggerFactory;
 public final class Main {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
-    private static final int DEFAULT_PORT = 8080;
+    private static final Integer DEFAULT_PORT = 8080;
 
     private Main() {
     }
 
     public static void main(final String[] args) {
-        int port = resolvePort();
+        Integer port = resolvePort();
         var injector = DependencyInjectionModule.getInstance();
         WebServer server = injector.getInstance(WebServer.class);
 
@@ -25,7 +25,7 @@ public final class Main {
         LOGGER.info("domu-backend listening on http://localhost:{}", server.getPort());
     }
 
-    private static int resolvePort() {
+    private static Integer resolvePort() {
         String systemPort = System.getProperty("javalin.port");
         if (systemPort != null && !systemPort.isBlank()) {
             try {
@@ -36,7 +36,7 @@ public final class Main {
         }
 
         AppConfig config = DependencyInjectionModule.getInstance().getInstance(AppConfig.class);
-        if (config.serverPort() > 0) {
+        if (config.serverPort() != null && config.serverPort() > 0) {
             return config.serverPort();
         }
 
