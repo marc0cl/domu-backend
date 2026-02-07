@@ -18,6 +18,8 @@ public record AppConfig(
         Integer serverPort,
         String boxDeveloperToken,
         String boxRootFolderId,
+        String gcsBucketName,
+        String gcsKeyFilePath,
         String mailHost,
         Integer mailPort,
         String mailUser,

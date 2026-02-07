@@ -51,6 +51,9 @@ import com.domu.service.ChatService;
 import com.domu.service.BuildingService;
 import com.domu.service.CommonExpensePdfService;
 import com.domu.service.CommonExpenseService;
+import com.domu.service.PaymentReceiptPdfService;
+import com.domu.service.ChargeReceiptPdfService;
+import com.domu.dto.SimulatedPaymentRequest;
 import com.domu.service.VisitService;
 import com.domu.service.VisitContactService;
 import com.domu.service.IncidentService;
@@ -71,6 +74,7 @@ import com.domu.service.UserAlreadyExistsException;
 import com.domu.service.UserService;
 import com.domu.service.ValidationException;
 import com.domu.database.HousingUnitRepository;
+import com.domu.domain.core.HousingUnit;
 import com.domu.service.ForumService;
 import com.domu.dto.CreateThreadRequest;
 import com.domu.database.UserBuildingRepository;
@@ -111,6 +115,8 @@ public final class WebServer {
     private final UserService userService;
     private final CommonExpenseService commonExpenseService;
     private final CommonExpensePdfService commonExpensePdfService;
+    private final PaymentReceiptPdfService paymentReceiptPdfService;
+    private final ChargeReceiptPdfService chargeReceiptPdfService;
     private final BuildingService buildingService;
     private final VisitService visitService;
     private final VisitContactService visitContactService;
@@ -135,6 +141,7 @@ public final class WebServer {
     private final EmailService emailService;
     private final com.domu.database.UserRepository userRepository;
     private final ForumService forumService;
+    private final com.domu.service.GcsStorageService gcsStorageService;
     private final Javalin app;
     private Integer port = -1;
 
@@ -144,6 +151,8 @@ public final class WebServer {
             final UserService userService,
             final CommonExpenseService commonExpenseService,
             final CommonExpensePdfService commonExpensePdfService,
+            final PaymentReceiptPdfService paymentReceiptPdfService,
+            final ChargeReceiptPdfService chargeReceiptPdfService,
             final BuildingService buildingService,
             final VisitService visitService,
             final VisitContactService visitContactService,
@@ -167,11 +176,14 @@ public final class WebServer {
             final HousingUnitRepository housingUnitRepository,
             final EmailService emailService,
             final com.domu.database.UserRepository userRepository,
-            final ForumService forumService) {
+            final ForumService forumService,
+            final com.domu.service.GcsStorageService gcsStorageService) {
         this.dataSource = dataSource;
         this.userService = userService;
         this.commonExpenseService = commonExpenseService;
         this.commonExpensePdfService = commonExpensePdfService;
+        this.paymentReceiptPdfService = paymentReceiptPdfService;
+        this.chargeReceiptPdfService = chargeReceiptPdfService;
         this.buildingService = buildingService;
         this.visitService = visitService;
         this.visitContactService = visitContactService;
@@ -196,6 +208,7 @@ public final class WebServer {
         this.emailService = emailService;
         this.userRepository = userRepository;
         this.forumService = forumService;
+        this.gcsStorageService = gcsStorageService;
         this.app = createApp();
     }
 
@@ -402,7 +415,7 @@ public final class WebServer {
             ctx.status(HttpStatus.CREATED);
             var buildings = loadBuildings(created);
             Long activeBuildingId = resolveActiveBuildingId(created, buildings);
-            ctx.json(UserMapper.toResponse(created, buildings, activeBuildingId));
+            ctx.json(UserMapper.toResponse(created, buildings, activeBuildingId, gcsStorageService));
         });
 
         javalin.post("/api/auth/login", ctx -> {
@@ -411,7 +424,14 @@ public final class WebServer {
             String token = jwtProvider.generateToken(user);
             var buildings = loadBuildings(user);
             Long activeBuildingId = resolveActiveBuildingId(user, buildings);
-            ctx.json(new AuthResponse(token, UserMapper.toResponse(user, buildings, activeBuildingId)));
+            ctx.json(new AuthResponse(token, UserMapper.toResponse(user, buildings, activeBuildingId, gcsStorageService)));
+        });
+
+        javalin.post("/api/auth/confirm", ctx -> {
+            ConfirmationRequest request = ctx.bodyValidator(ConfirmationRequest.class).get();
+            userService.confirmUser(request.getToken());
+            ctx.status(HttpStatus.OK);
+            ctx.json(Map.of("message", "Usuario confirmado exitosamente"));
         });
 
         javalin.post("/api/auth/confirm", ctx -> {
@@ -471,7 +491,7 @@ public final class WebServer {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             var buildings = loadBuildings(user);
             Long activeBuildingId = resolveActiveBuildingId(user, buildings);
-            UserResponse response = UserMapper.toResponseFromContext(ctx, buildings, activeBuildingId);
+            UserResponse response = UserMapper.toResponseFromContext(ctx, buildings, activeBuildingId, gcsStorageService);
             ctx.json(response);
         });
 
@@ -508,10 +528,31 @@ public final class WebServer {
                     request.getFirstName(),
                     request.getLastName(),
                     request.getPhone(),
-                    request.getDocumentNumber());
+                    request.getDocumentNumber(),
+                    request.getDisplayName());
             var buildings = loadBuildings(updated);
             Long activeBuildingId = resolveActiveBuildingId(updated, buildings);
-            ctx.json(UserMapper.toResponse(updated, buildings, activeBuildingId));
+            ctx.json(UserMapper.toResponse(updated, buildings, activeBuildingId, gcsStorageService));
+        });
+
+        javalin.post("/api/users/me/avatar", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            var file = ctx.uploadedFile("avatar");
+            if (file == null) {
+                throw new ValidationException("Archivo avatar es requerido");
+            }
+            userService.updateAvatar(user, file.filename(), file.content().readAllBytes());
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        javalin.post("/api/users/me/privacy-avatar", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            var file = ctx.uploadedFile("avatar");
+            if (file == null) {
+                throw new ValidationException("Archivo avatar es requerido");
+            }
+            userService.updatePrivacyAvatar(user, file.filename(), file.content().readAllBytes());
+            ctx.status(HttpStatus.NO_CONTENT);
         });
 
         javalin.post("/api/users/me/avatar", ctx -> {
@@ -557,13 +598,23 @@ public final class WebServer {
             RegistrationRequest request = validateRegistration(ctx.bodyValidator(RegistrationRequest.class));
             Long selectedBuildingId = validateSelectedBuilding(ctx, current);
 
+            // Resolver unitNumber → unitId si se envió número de depto
+            Long resolvedUnitId = request.getUnitId();
+            if (resolvedUnitId == null && request.getUnitNumber() != null && selectedBuildingId != null) {
+                String numberStr = String.valueOf(request.getUnitNumber());
+                var unit = housingUnitRepository.findByBuildingIdAndNumber(selectedBuildingId, numberStr)
+                        .orElseThrow(() -> new ValidationException(
+                                "No existe la unidad " + request.getUnitNumber() + " en este edificio"));
+                resolvedUnitId = unit.id();
+            }
+
             String rawPassword = request.getPassword();
             if (rawPassword == null || rawPassword.isBlank()) {
                 rawPassword = "1234567890";
             }
 
             User created = userService.adminCreateUser(
-                    request.getUnitId(),
+                    resolvedUnitId,
                     request.getRoleId(),
                     request.getFirstName(),
                     request.getLastName(),
@@ -579,7 +630,149 @@ public final class WebServer {
             Long activeBuildingId = resolveActiveBuildingId(created, buildings);
             sendUserCredentialsEmail(created, rawPassword);
             ctx.status(HttpStatus.CREATED);
-            ctx.json(UserMapper.toResponse(created, buildings, activeBuildingId));
+            ctx.json(UserMapper.toResponse(created, buildings, activeBuildingId, gcsStorageService));
+        });
+
+        // Obtener residentes del edificio seleccionado, agrupados por unidad
+        javalin.get("/api/admin/residents", ctx -> {
+            User current = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (current == null || current.roleId() == null ||
+                    (current.roleId() != 1L && current.roleId() != 3L)) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores y conserjes pueden ver residentes",
+                        HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long selectedBuildingId = validateSelectedBuilding(ctx, current);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            var residents = userRepository.findResidentsByBuilding(selectedBuildingId);
+            var response = residents.stream()
+                    .map(com.domu.dto.ResidentResponse::from)
+                    .toList();
+            ctx.json(response);
+        });
+
+        // ===== HOUSING UNITS ENDPOINTS =====
+
+        // Listar unidades del edificio seleccionado
+        javalin.get("/api/admin/housing-units", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            var units = housingUnitService.listByBuilding(user.id(), selectedBuildingId);
+            ctx.json(units);
+        });
+
+        // Obtener detalle de una unidad
+        javalin.get("/api/admin/housing-units/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long unitId = Long.parseLong(ctx.pathParam("id"));
+            var unit = housingUnitService.getById(user.id(), unitId);
+            ctx.json(unit);
+        });
+
+        // Crear nueva unidad
+        javalin.post("/api/admin/housing-units", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            com.domu.dto.HousingUnitRequest request = ctx.bodyValidator(com.domu.dto.HousingUnitRequest.class)
+                    .check(r -> r.getNumber() != null && !r.getNumber().isBlank(), "number es requerido")
+                    .check(r -> r.getTower() != null && !r.getTower().isBlank(), "tower es requerida")
+                    .check(r -> r.getFloor() != null && !r.getFloor().isBlank(), "floor es requerido")
+                    .get();
+            var created = housingUnitService.create(user.id(), selectedBuildingId, request);
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(created);
+        });
+
+        // Actualizar unidad existente
+        javalin.put("/api/admin/housing-units/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long unitId = Long.parseLong(ctx.pathParam("id"));
+            com.domu.dto.HousingUnitRequest request = ctx.bodyValidator(com.domu.dto.HousingUnitRequest.class)
+                    .check(r -> r.getNumber() != null && !r.getNumber().isBlank(), "number es requerido")
+                    .check(r -> r.getTower() != null && !r.getTower().isBlank(), "tower es requerida")
+                    .check(r -> r.getFloor() != null && !r.getFloor().isBlank(), "floor es requerido")
+                    .get();
+            var updated = housingUnitService.update(user.id(), unitId, request);
+            ctx.json(updated);
+        });
+
+        // Eliminar unidad (soft delete)
+        javalin.delete("/api/admin/housing-units/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long unitId = Long.parseLong(ctx.pathParam("id"));
+            housingUnitService.delete(user.id(), unitId);
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        // Vincular residente a unidad
+        javalin.post("/api/admin/housing-units/{id}/residents", ctx -> {
+            try {
+                User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+                String unitIdParam = ctx.pathParam("id");
+                Long unitId;
+                try {
+                    unitId = Long.parseLong(unitIdParam);
+                } catch (NumberFormatException e) {
+                    LOGGER.error("ID de unidad inválido: {}", unitIdParam);
+                    ctx.status(HttpStatus.BAD_REQUEST);
+                    ctx.json(ErrorResponse.of("ID de unidad inválido: " + unitIdParam,
+                            HttpStatus.BAD_REQUEST.getCode()));
+                    return;
+                }
+
+                com.domu.dto.LinkResidentToUnitRequest request = ctx
+                        .bodyValidator(com.domu.dto.LinkResidentToUnitRequest.class)
+                        .check(r -> r.getUserId() != null, "userId es requerido")
+                        .get();
+
+                LOGGER.info("Vinculando residente {} a unidad {}", request.getUserId(), unitId);
+                housingUnitService.linkResident(user.id(), request.getUserId(), unitId);
+                LOGGER.info("Residente {} vinculado exitosamente a unidad {}", request.getUserId(), unitId);
+                ctx.status(HttpStatus.NO_CONTENT);
+            } catch (com.domu.service.ValidationException e) {
+                LOGGER.error("Error validando vinculación de residente", e);
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of(e.getMessage(), HttpStatus.BAD_REQUEST.getCode()));
+            } catch (Exception e) {
+                LOGGER.error("Error vinculando residente a unidad", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.json(ErrorResponse.of("Error al vincular residente: " + e.getMessage(),
+                        HttpStatus.INTERNAL_SERVER_ERROR.getCode()));
+            }
+        });
+
+        // Desvincular residente de unidad
+        javalin.delete("/api/admin/housing-units/{id}/residents/{userId}", ctx -> {
+            try {
+                User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+                Long residentUserId = Long.parseLong(ctx.pathParam("userId"));
+                housingUnitService.unlinkResident(user.id(), residentUserId);
+                ctx.status(HttpStatus.NO_CONTENT);
+            } catch (com.domu.service.ValidationException e) {
+                LOGGER.error("Error validando desvinculación de residente", e);
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of(e.getMessage(), HttpStatus.BAD_REQUEST.getCode()));
+            } catch (Exception e) {
+                LOGGER.error("Error desvinculando residente de unidad", e);
+                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                ctx.json(ErrorResponse.of("Error al desvincular residente: " + e.getMessage(),
+                        HttpStatus.INTERNAL_SERVER_ERROR.getCode()));
+            }
         });
 
         // Obtener residentes del edificio seleccionado, agrupados por unidad
@@ -825,11 +1018,72 @@ public final class WebServer {
             ctx.json(commonExpenseService.payCharge(chargeId, user, request));
         });
 
-        // RF_07: Pago simulado para demostración
+        // RF_07: Pago simulado para demostración (con soporte de abono parcial)
         javalin.post("/api/finance/charges/{chargeId}/pay-simulated", ctx -> {
             Long chargeId = Long.parseLong(ctx.pathParam("chargeId"));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            ctx.json(commonExpenseService.payChargeSimulated(chargeId, user));
+            SimulatedPaymentRequest request = ctx.bodyAsClass(SimulatedPaymentRequest.class);
+            ctx.json(commonExpenseService.payChargeSimulated(
+                    chargeId,
+                    user,
+                    request != null ? request.getAmount() : null,
+                    request != null ? request.getPaymentMethod() : null
+            ));
+        });
+
+        // Endpoint para descargar comprobante de pago
+        javalin.get("/api/finance/payments/{paymentId}/receipt", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long paymentId = Long.parseLong(ctx.pathParam("paymentId"));
+            var payment = commonExpenseService.getPaymentById(paymentId, user);
+
+            // Get charge info for the receipt
+            var chargeBalance = commonExpenseService.getChargeBalance(payment.chargeId());
+            String chargeDescription = chargeBalance != null ? chargeBalance.charge().description() : "Gasto Común";
+
+            // Get building and unit info
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            var building = resolveBuildingSummary(user, selectedBuildingId);
+            var unit = user != null && user.unitId() != null
+                    ? housingUnitRepository.findById(user.unitId()).orElse(null)
+                    : null;
+            String unitLabel = unit != null ? buildUnitLabel(unit) : "—";
+            String buildingName = building != null ? building.name() : "—";
+
+            byte[] pdf = paymentReceiptPdfService.buildPaymentReceipt(payment, buildingName, unitLabel, chargeDescription);
+            String fileName = String.format("comprobante-pago-%d.pdf", paymentId);
+            ctx.header("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
+            ctx.contentType("application/pdf");
+            ctx.result(pdf);
+        });
+
+        // Endpoint para generar boleta de cargo
+        javalin.get("/api/finance/charges/{chargeId}/boleta", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long chargeId = Long.parseLong(ctx.pathParam("chargeId"));
+            var chargeContext = commonExpenseService.getChargeContext(chargeId, user);
+
+            // Get building and unit info
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            var building = resolveBuildingSummary(user, selectedBuildingId);
+            var unit = user != null && user.unitId() != null
+                    ? housingUnitRepository.findById(user.unitId()).orElse(null)
+                    : null;
+            String unitLabel = unit != null ? buildUnitLabel(unit) : "—";
+            String buildingName = building != null ? building.name() : "—";
+
+            byte[] pdf = chargeReceiptPdfService.buildChargeReceipt(
+                    chargeContext.charge(),
+                    buildingName,
+                    unitLabel,
+                    chargeContext.year(),
+                    chargeContext.month(),
+                    chargeContext.dueDate()
+            );
+            String fileName = String.format("boleta-cargo-%d.pdf", chargeId);
+            ctx.header("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
+            ctx.contentType("application/pdf");
+            ctx.result(pdf);
         });
 
         javalin.post("/api/buildings/requests", ctx -> {
@@ -1266,13 +1520,35 @@ public final class WebServer {
             ctx.json(chatService.getMessages(roomId, 50));
         });
 
+        javalin.delete("/api/chat/rooms/{roomId}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null) {
+                throw new UnauthorizedResponse();
+            }
+            Long roomId = Long.parseLong(ctx.pathParam("roomId"));
+            chatService.hideRoom(roomId, user.id());
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        javalin.get("/api/chat/online", ctx -> {
+            ctx.json(chatWebSocketHandler.getOnlineUserIds());
+        });
+
         javalin.get("/api/chat/neighbors", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             if (user == null) {
                 throw new UnauthorizedResponse();
             }
             Long selectedBuildingId = ctx.attribute("selectedBuildingId");
-            ctx.json(userRepository.findNeighborsForChat(selectedBuildingId, user.id()));
+            var neighbors = userRepository.findNeighborsForChat(selectedBuildingId, user.id());
+            var resolved = neighbors.stream().map(n -> new com.domu.database.UserRepository.ChatNeighborSummary(
+                    n.id(),
+                    n.unitNumber(),
+                    n.displayName(),
+                    UserMapper.resolveUrl(n.avatarUrl(), gcsStorageService),
+                    UserMapper.resolveUrl(n.privacyAvatarBoxId(), gcsStorageService)
+            )).toList();
+            ctx.json(resolved);
         });
 
         // ==================== CHAT REQUESTS & PROFILES ====================
@@ -2134,5 +2410,23 @@ public final class WebServer {
 
     public Integer getPort() {
         return port;
+    }
+
+    private String buildUnitLabel(HousingUnit unit) {
+        if (unit == null) {
+            return null;
+        }
+        String number = unit.number() != null ? unit.number().trim() : "";
+        String tower = unit.tower() != null && !unit.tower().isBlank() ? unit.tower().trim() : "";
+        String floor = unit.floor() != null && !unit.floor().isBlank() ? unit.floor().trim() : "";
+        StringBuilder label = new StringBuilder();
+        if (!tower.isEmpty()) {
+            label.append("Torre ").append(tower).append(" ");
+        }
+        label.append("Depto ").append(number);
+        if (!floor.isEmpty()) {
+            label.append(" - Piso ").append(floor);
+        }
+        return label.toString().trim();
     }
 }

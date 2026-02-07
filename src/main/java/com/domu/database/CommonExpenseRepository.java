@@ -360,6 +360,33 @@ public class CommonExpenseRepository {
         }
     }
 
+    public Optional<CommonPayment> findPaymentById(Long paymentId) {
+        String sql = "SELECT id, unit_id, charge_id, user_id, issued_at, amount, payment_method, reference, status, receipt_text FROM common_payments WHERE id = ?";
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, paymentId);
+            try (ResultSet rs = statement.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.of(new CommonPayment(
+                            rs.getLong("id"),
+                            rs.getLong("unit_id"),
+                            rs.getLong("charge_id"),
+                            rs.getObject("user_id", Long.class),
+                            rs.getDate("issued_at").toLocalDate(),
+                            rs.getBigDecimal("amount"),
+                            rs.getString("payment_method"),
+                            rs.getString("reference"),
+                            rs.getString("status"),
+                            rs.getString("receipt_text")
+                    ));
+                }
+                return Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error buscando pago por ID", e);
+        }
+    }
+
     public boolean periodBelongsToBuilding(Long periodId, Long buildingId) {
         String sql = "SELECT 1 FROM common_expense_periods WHERE id = ? AND building_id = ? LIMIT 1";
         try (Connection connection = dataSource.getConnection();
@@ -562,7 +589,7 @@ public class CommonExpenseRepository {
                        c.prorateable, c.payer_type, c.receipt_text,
                        c.receipt_file_id, c.receipt_file_name, c.receipt_folder_id, c.receipt_mime_type,
                        c.receipt_uploaded_at,
-                       p.building_id, p.year, p.month
+                       p.building_id, p.year, p.month, p.due_date
                 FROM common_charges c
                 JOIN common_expense_periods p ON p.id = c.period_id
                 WHERE c.id = ?
@@ -573,11 +600,13 @@ public class CommonExpenseRepository {
             try (ResultSet rs = statement.executeQuery()) {
                 if (rs.next()) {
                     CommonCharge charge = mapCharge(rs);
+                    Date dueDate = rs.getDate("due_date");
                     return Optional.of(new ChargeContextRow(
                             charge,
                             rs.getLong("building_id"),
                             (Integer) rs.getObject("year"),
-                            (Integer) rs.getObject("month")
+                            (Integer) rs.getObject("month"),
+                            dueDate != null ? dueDate.toLocalDate() : null
                     ));
                 }
             }
@@ -647,6 +676,52 @@ public class CommonExpenseRepository {
             return rows;
         } catch (SQLException e) {
             throw new RepositoryException("Error obteniendo revisiones del período", e);
+        }
+    }
+
+    public record PaymentDetailRow(
+            Long id,
+            Long chargeId,
+            String chargeDescription,
+            java.math.BigDecimal amount,
+            String paymentMethod,
+            String reference,
+            String status,
+            java.time.LocalDate issuedAt
+    ) {
+    }
+
+    public List<PaymentDetailRow> findPaymentsForUnitAndPeriod(Long unitId, Long periodId) {
+        String sql = """
+                SELECT pay.id, pay.charge_id, c.description AS charge_description,
+                       pay.amount, pay.payment_method, pay.reference, pay.status, pay.issued_at
+                FROM common_payments pay
+                JOIN common_charges c ON c.id = pay.charge_id
+                WHERE c.unit_id = ? AND c.period_id = ?
+                ORDER BY pay.issued_at DESC
+                """;
+        List<PaymentDetailRow> rows = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, unitId);
+            statement.setLong(2, periodId);
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(new PaymentDetailRow(
+                            rs.getLong("id"),
+                            rs.getLong("charge_id"),
+                            rs.getString("charge_description"),
+                            rs.getBigDecimal("amount"),
+                            rs.getString("payment_method"),
+                            rs.getString("reference"),
+                            rs.getString("status"),
+                            rs.getDate("issued_at") != null ? rs.getDate("issued_at").toLocalDate() : null
+                    ));
+                }
+            }
+            return rows;
+        } catch (SQLException e) {
+            throw new RepositoryException("Error obteniendo pagos por período y unidad", e);
         }
     }
 
@@ -770,7 +845,8 @@ public class CommonExpenseRepository {
             CommonCharge charge,
             Long buildingId,
             Integer year,
-            Integer month
+            Integer month,
+            LocalDate dueDate
     ) {
     }
 }

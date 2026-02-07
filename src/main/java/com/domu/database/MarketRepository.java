@@ -20,7 +20,7 @@ public class MarketRepository {
 
     public List<MarketItemResponse> findAllByBuilding(Long buildingId, Long categoryId, String status) {
         StringBuilder sql = new StringBuilder("""
-                SELECT i.*, c.name as category_name, u.first_name, u.last_name
+                SELECT i.*, c.name as category_name, u.first_name, u.last_name, u.avatar_box_id as seller_avatar
                 FROM market_item i
                 JOIN market_category c ON i.category_id = c.id
                 JOIN users u ON i.user_id = u.id
@@ -151,6 +151,93 @@ public class MarketRepository {
         }
     }
 
+    public void deleteImageById(Long imageId) {
+        String sql = "DELETE FROM market_item_image WHERE id = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, imageId);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error eliminando imagen del mercado", e);
+        }
+    }
+
+    public void reassignMainImage(Long itemId) {
+        // Check if there's already a main image
+        String checkSql = "SELECT COUNT(*) FROM market_item_image WHERE item_id = ? AND is_main = TRUE";
+        String firstImageSql = "SELECT id, url FROM market_item_image WHERE item_id = ? ORDER BY id ASC LIMIT 1";
+        String setMainSql = "UPDATE market_item_image SET is_main = TRUE WHERE id = ?";
+        String updateItemSql = "UPDATE market_item SET main_image_url = ? WHERE id = ?";
+        try (Connection conn = dataSource.getConnection()) {
+            // Check if main exists
+            try (PreparedStatement stmt = conn.prepareStatement(checkSql)) {
+                stmt.setLong(1, itemId);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    if (rs.next() && rs.getInt(1) > 0) return; // Main already exists
+                }
+            }
+            // No main — assign first image as main
+            try (PreparedStatement stmt = conn.prepareStatement(firstImageSql)) {
+                stmt.setLong(1, itemId);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    if (rs.next()) {
+                        Long firstId = rs.getLong("id");
+                        String firstUrl = rs.getString("url");
+                        try (PreparedStatement setMain = conn.prepareStatement(setMainSql)) {
+                            setMain.setLong(1, firstId);
+                            setMain.executeUpdate();
+                        }
+                        try (PreparedStatement updateItem = conn.prepareStatement(updateItemSql)) {
+                            updateItem.setString(1, firstUrl);
+                            updateItem.setLong(2, itemId);
+                            updateItem.executeUpdate();
+                        }
+                    } else {
+                        // No images left — clear main_image_url
+                        try (PreparedStatement updateItem = conn.prepareStatement(updateItemSql)) {
+                            updateItem.setNull(1, java.sql.Types.VARCHAR);
+                            updateItem.setLong(2, itemId);
+                            updateItem.executeUpdate();
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error reasignando imagen principal", e);
+        }
+    }
+
+    public String getImagePath(Long imageId) {
+        String sql = "SELECT url FROM market_item_image WHERE id = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, imageId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() ? rs.getString("url") : null;
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error buscando imagen", e);
+        }
+    }
+
+    private List<MarketItemResponse.ImageInfo> findImageInfoByItem(Long itemId, Connection conn) throws SQLException {
+        String sql = "SELECT id, url, is_main FROM market_item_image WHERE item_id = ? ORDER BY id ASC";
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, itemId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                List<MarketItemResponse.ImageInfo> images = new ArrayList<>();
+                while (rs.next()) {
+                    images.add(MarketItemResponse.ImageInfo.builder()
+                            .id(rs.getLong("id"))
+                            .url(rs.getString("url"))
+                            .isMain(rs.getBoolean("is_main"))
+                            .build());
+                }
+                return images;
+            }
+        }
+    }
+
     private List<String> findImagesByItem(Long itemId, Connection conn) throws SQLException {
         String sql = "SELECT url FROM market_item_image WHERE item_id = ? ORDER BY id ASC";
         try (PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -165,10 +252,13 @@ public class MarketRepository {
 
     private MarketItemResponse mapItem(ResultSet rs, Connection conn) throws SQLException {
         Long itemId = rs.getLong("id");
+        List<MarketItemResponse.ImageInfo> imageInfos = findImageInfoByItem(itemId, conn);
+        List<String> imageUrls = imageInfos.stream().map(MarketItemResponse.ImageInfo::url).toList();
         return MarketItemResponse.builder()
                 .id(itemId)
                 .userId(rs.getLong("user_id"))
                 .sellerName(rs.getString("first_name") + " " + rs.getString("last_name"))
+                .sellerPhotoUrl(rs.getString("seller_avatar"))
                 .categoryId(rs.getLong("category_id"))
                 .categoryName(rs.getString("category_name"))
                 .title(rs.getString("title"))
@@ -177,7 +267,8 @@ public class MarketRepository {
                 .originalPriceLink(rs.getString("original_price_link"))
                 .status(rs.getString("status"))
                 .mainImageUrl(rs.getString("main_image_url"))
-                .imageUrls(findImagesByItem(itemId, conn))
+                .images(imageInfos)
+                .imageUrls(imageUrls)
                 .createdAt(rs.getTimestamp("created_at").toLocalDateTime())
                 .build();
     }

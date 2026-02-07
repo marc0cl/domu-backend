@@ -209,6 +209,37 @@ public class HousingUnitRepository {
     }
 
     /**
+     * Buscar unidad por número dentro de un edificio
+     */
+    public Optional<HousingUnit> findByBuildingIdAndNumber(Long buildingId, String number) {
+        boolean hasAuditColumns = checkAuditColumnsExist();
+        String sql = hasAuditColumns ? """
+                SELECT id, building_id, number, tower, floor, aliquot_percentage,
+                       square_meters, status, created_by_user_id, created_at, updated_at
+                FROM housing_units
+                WHERE building_id = ? AND number = ? AND status != 'DELETED'
+                """ : """
+                SELECT id, building_id, number, tower, floor, aliquot_percentage,
+                       square_meters, status, NULL as created_by_user_id, NULL as created_at, NULL as updated_at
+                FROM housing_units
+                WHERE building_id = ? AND number = ? AND (status IS NULL OR status != 'DELETED')
+                """;
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, buildingId);
+            statement.setString(2, number);
+            try (ResultSet rs = statement.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.of(mapRow(rs));
+                }
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error fetching housing unit by building and number", e);
+        }
+        return Optional.empty();
+    }
+
+    /**
      * Verificar si existe una unidad con el mismo número en el mismo edificio
      */
     public boolean existsByNumberAndBuildingId(String number, Long buildingId, Long excludeId) {

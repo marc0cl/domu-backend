@@ -26,29 +26,62 @@ public class UserService {
     private final StaffRepository staffRepository;
     private final PasswordHasher passwordHasher;
     private final MarketplaceStorageService storageService;
+    private final GcsStorageService gcsStorageService;
 
     @Inject
     public UserService(UserRepository userRepository, UserBuildingRepository userBuildingRepository,
             UserConfirmationRepository userConfirmationRepository,
             StaffRepository staffRepository,
             PasswordHasher passwordHasher,
-            MarketplaceStorageService storageService) {
+            MarketplaceStorageService storageService,
+            GcsStorageService gcsStorageService) {
         this.userRepository = userRepository;
         this.userBuildingRepository = userBuildingRepository;
         this.userConfirmationRepository = userConfirmationRepository;
         this.staffRepository = staffRepository;
         this.passwordHasher = passwordHasher;
         this.storageService = storageService;
+        this.gcsStorageService = gcsStorageService;
     }
 
     public void updateAvatar(User user, String fileName, byte[] content) {
-        String url = storageService.uploadProfileImage(user.id(), fileName, content);
-        userRepository.updateAvatar(user.id(), url);
+        // Generate the new path first (before uploading)
+        String ext = com.domu.service.ImageOptimizer.outputExtension();
+        String newPath = gcsStorageService.profileAvatarPath(user.id(), ext);
+        
+        // Delete old avatar from GCS if it exists and is different from the new path
+        String oldAvatarPath = user.avatarBoxId();
+        if (oldAvatarPath != null && !oldAvatarPath.isBlank() && !oldAvatarPath.equals(newPath)) {
+            try {
+                gcsStorageService.delete(oldAvatarPath);
+            } catch (Exception e) {
+                // Log but don't fail if deletion fails (image might not exist)
+            }
+        }
+        
+        // Upload the new image (this will overwrite if path is the same)
+        String uploadedPath = storageService.uploadProfileImage(user.id(), fileName, content);
+        userRepository.updateAvatar(user.id(), uploadedPath);
     }
 
     public void updatePrivacyAvatar(User user, String fileName, byte[] content) {
-        String url = storageService.uploadProfileImage(user.id(), fileName, content);
-        userRepository.updatePrivacyAvatar(user.id(), url);
+        // Generate the new path first (before uploading)
+        String ext = com.domu.service.ImageOptimizer.outputExtension();
+        String newPath = gcsStorageService.profilePrivacyAvatarPath(user.id(), ext);
+        
+        // Delete old privacy avatar from GCS if it exists and is different from the new path
+        String oldPrivacyAvatarPath = user.privacyAvatarBoxId();
+        if (oldPrivacyAvatarPath != null && !oldPrivacyAvatarPath.isBlank() && !oldPrivacyAvatarPath.equals(newPath)) {
+            try {
+                gcsStorageService.delete(oldPrivacyAvatarPath);
+            } catch (Exception e) {
+                // Log but don't fail if deletion fails (image might not exist)
+            }
+        }
+        
+        // Upload the new image (this will overwrite if path is the same)
+        String uploadedPath = storageService.uploadPrivacyImage(user.id(), fileName, content);
+        userRepository.updatePrivacyAvatar(user.id(), uploadedPath);
     }
 
     public User adminCreateUser(
@@ -85,6 +118,7 @@ public class UserService {
                 resident,
                 LocalDateTime.now(),
                 "PENDING",
+                null,
                 null,
                 null,
                 null);
@@ -194,6 +228,7 @@ public class UserService {
                 "ACTIVE",
                 null,
                 null,
+                null,
                 null);
         return userRepository.save(user);
     }
@@ -225,6 +260,7 @@ public class UserService {
                 "ACTIVE",
                 null,
                 null,
+                null,
                 null);
         User saved = userRepository.save(user);
         userBuildingRepository.addUserToBuilding(saved.id(), buildingId);
@@ -248,7 +284,7 @@ public class UserService {
         return userRepository.findByEmail(email.toLowerCase());
     }
 
-    public User updateProfile(User user, String firstName, String lastName, String phone, String documentNumber) {
+    public User updateProfile(User user, String firstName, String lastName, String phone, String documentNumber, String displayName) {
         if (user == null || user.id() == null) {
             throw new ValidationException("Usuario inválido");
         }
@@ -261,8 +297,14 @@ public class UserService {
         if (isBlank(documentNumber)) {
             throw new ValidationException("Debes ingresar un documento de identidad");
         }
-        return userRepository.updateProfile(user.id(), firstName.trim(), lastName.trim(), phone.trim(),
+        User updated = userRepository.updateProfile(user.id(), firstName.trim(), lastName.trim(), phone.trim(),
                 documentNumber.trim());
+        // Update display name if provided
+        if (displayName != null) {
+            String trimmed = displayName.trim();
+            userRepository.updateDisplayName(user.id(), trimmed.isEmpty() ? null : trimmed);
+        }
+        return userRepository.findById(user.id()).orElse(updated);
     }
 
     public void changePassword(User user, String oldPassword, String newPassword) {

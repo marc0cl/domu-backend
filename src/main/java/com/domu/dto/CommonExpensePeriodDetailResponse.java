@@ -21,6 +21,7 @@ public record CommonExpensePeriodDetailResponse(
         String buildingCity,
         String unitLabel,
         List<CommonChargeDetailResponse> charges,
+        List<CommonPaymentDetailResponse> payments,
         List<CommonExpenseRevisionResponse> revisions
 ) {
 }
