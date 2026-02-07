@@ -25,8 +25,8 @@ public class IncidentRepository {
 
     public IncidentRow insert(IncidentRow incident) {
         String sql = """
-                INSERT INTO incidents (user_id, unit_id, title, description, category, priority, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO incidents (user_id, unit_id, building_id, title, description, category, priority, status, assigned_to_user_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         LocalDateTime createdAt = incident.createdAt() != null ? incident.createdAt() : LocalDateTime.now();
         try (Connection connection = dataSource.getConnection();
@@ -37,12 +37,22 @@ public class IncidentRepository {
             } else {
                 statement.setNull(2, java.sql.Types.BIGINT);
             }
-            statement.setString(3, incident.title());
-            statement.setString(4, incident.description());
-            statement.setString(5, incident.category());
-            statement.setString(6, incident.priority());
-            statement.setString(7, incident.status());
-            statement.setTimestamp(8, Timestamp.valueOf(createdAt));
+            if (incident.buildingId() != null) {
+                statement.setLong(3, incident.buildingId());
+            } else {
+                statement.setNull(3, java.sql.Types.BIGINT);
+            }
+            statement.setString(4, incident.title());
+            statement.setString(5, incident.description());
+            statement.setString(6, incident.category());
+            statement.setString(7, incident.priority());
+            statement.setString(8, incident.status());
+            if (incident.assignedToUserId() != null) {
+                statement.setLong(9, incident.assignedToUserId());
+            } else {
+                statement.setNull(9, java.sql.Types.BIGINT);
+            }
+            statement.setTimestamp(10, Timestamp.valueOf(createdAt));
             statement.executeUpdate();
             try (ResultSet keys = statement.getGeneratedKeys()) {
                 if (keys.next()) {
@@ -51,11 +61,13 @@ public class IncidentRepository {
                             id,
                             incident.userId(),
                             incident.unitId(),
+                            incident.buildingId(),
                             incident.title(),
                             incident.description(),
                             incident.category(),
                             incident.priority(),
                             incident.status(),
+                            incident.assignedToUserId(),
                             createdAt,
                             createdAt);
                 }
@@ -67,18 +79,27 @@ public class IncidentRepository {
     }
 
     public List<IncidentRow> findAll(LocalDateTime from, LocalDateTime to) {
-        String sql = baseQuery(from, to, false);
-        return executeQuery(sql, null, from, to);
+        String sql = baseQuery(from, to, false, false);
+        return executeQuery(sql, null, null, from, to);
     }
 
     public List<IncidentRow> findByUser(Long userId, LocalDateTime from, LocalDateTime to) {
-        String sql = baseQuery(from, to, true);
-        return executeQuery(sql, userId, from, to);
+        String sql = baseQuery(from, to, true, false);
+        return executeQuery(sql, userId, null, from, to);
+    }
+
+    /**
+     * Encuentra incidentes filtrados por edificio.
+     * Usa la columna building_id directamente (sin JOIN).
+     */
+    public List<IncidentRow> findByBuilding(Long buildingId, LocalDateTime from, LocalDateTime to) {
+        String sql = baseQuery(from, to, false, true);
+        return executeQuery(sql, null, buildingId, from, to);
     }
 
     public Optional<IncidentRow> findById(Long id) {
         String sql = """
-                SELECT id, user_id, unit_id, title, description, category, priority, status, created_at, updated_at
+                SELECT id, user_id, unit_id, building_id, title, description, category, priority, status, assigned_to_user_id, created_at, updated_at
                 FROM incidents
                 WHERE id = ?
                 """;
@@ -119,32 +140,66 @@ public class IncidentRepository {
         }
     }
 
-    private String baseQuery(LocalDateTime from, LocalDateTime to, boolean filterByUser) {
-        StringBuilder sb = new StringBuilder("""
-                SELECT id, user_id, unit_id, title, description, category, priority, status, created_at, updated_at
-                FROM incidents
-                WHERE 1=1
-                """);
+    public IncidentRow updateAssignment(Long id, Long assignedToUserId, LocalDateTime updatedAt) {
+        String sql = """
+                UPDATE incidents
+                SET assigned_to_user_id = ?, updated_at = ?
+                WHERE id = ?
+                """;
+        LocalDateTime effectiveUpdatedAt = updatedAt != null ? updatedAt : LocalDateTime.now();
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            if (assignedToUserId != null) {
+                statement.setLong(1, assignedToUserId);
+            } else {
+                statement.setNull(1, java.sql.Types.BIGINT);
+            }
+            statement.setTimestamp(2, Timestamp.valueOf(effectiveUpdatedAt));
+            statement.setLong(3, id);
+            int updated = statement.executeUpdate();
+            if (updated == 0) {
+                throw new RepositoryException("Incidente no encontrado para actualizar asignación");
+            }
+            return findById(id)
+                    .orElseThrow(() -> new RepositoryException("No se pudo recuperar el incidente actualizado"));
+        } catch (SQLException e) {
+            throw new RepositoryException("Error actualizando asignación del incidente", e);
+        }
+    }
+
+    private String baseQuery(LocalDateTime from, LocalDateTime to, boolean filterByUser, boolean filterByBuilding) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("SELECT i.id, i.user_id, i.unit_id, i.building_id, i.title, i.description, i.category, i.priority, i.status, i.assigned_to_user_id, i.created_at, i.updated_at ");
+        sb.append("FROM incidents i ");
+        sb.append("WHERE 1=1 ");
         if (filterByUser) {
-            sb.append(" AND user_id = ? ");
+            sb.append("AND i.user_id = ? ");
+        }
+        if (filterByBuilding) {
+            // Filtrar directamente por building_id (sin JOIN)
+            sb.append("AND i.building_id = ? ");
         }
         if (from != null) {
-            sb.append(" AND created_at >= ? ");
+            sb.append("AND i.created_at >= ? ");
         }
         if (to != null) {
-            sb.append(" AND created_at <= ? ");
+            sb.append("AND i.created_at <= ? ");
         }
-        sb.append(" ORDER BY created_at DESC ");
+        sb.append("ORDER BY i.created_at DESC ");
         return sb.toString();
     }
 
-    private List<IncidentRow> executeQuery(String sql, Long userId, LocalDateTime from, LocalDateTime to) {
+    private List<IncidentRow> executeQuery(String sql, Long userId, Long buildingId, LocalDateTime from,
+            LocalDateTime to) {
         List<IncidentRow> results = new ArrayList<>();
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
-            Integer idx = 1;
+            int idx = 1;
             if (userId != null) {
                 statement.setLong(idx++, userId);
+            }
+            if (buildingId != null) {
+                statement.setLong(idx++, buildingId);
             }
             if (from != null) {
                 statement.setTimestamp(idx++, Timestamp.valueOf(from));
@@ -169,11 +224,13 @@ public class IncidentRepository {
                 rs.getLong("id"),
                 rs.getLong("user_id"),
                 (Long) rs.getObject("unit_id"),
+                (Long) rs.getObject("building_id"),
                 rs.getString("title"),
                 rs.getString("description"),
                 rs.getString("category"),
                 rs.getString("priority"),
                 rs.getString("status"),
+                (Long) rs.getObject("assigned_to_user_id"),
                 rs.getTimestamp("created_at").toLocalDateTime(),
                 updated != null ? updated.toLocalDateTime() : null);
     }
@@ -182,11 +239,13 @@ public class IncidentRepository {
             Long id,
             Long userId,
             Long unitId,
+            Long buildingId,
             String title,
             String description,
             String category,
             String priority,
             String status,
+            Long assignedToUserId,
             LocalDateTime createdAt,
             LocalDateTime updatedAt) {
     }

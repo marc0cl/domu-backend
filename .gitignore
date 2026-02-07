@@ -39,6 +39,9 @@ replay_pid*
 # VS Code
 .vscode/
 
+# Env files (local secrets)
+.env
+
 # Python artifacts (legacy cleanup)
 __pycache__/
 *.py[cod]
@@ -47,3 +50,4 @@ __pycache__/
 .gradle/
 /.gradle
 /build
+.gradle-local/

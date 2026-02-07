@@ -16,6 +16,9 @@ public record UserResponse(
         Boolean resident,
         LocalDateTime createdAt,
         String status,
+        String avatarBoxId,
+        String privacyAvatarBoxId,
+        String displayName,
         Long activeBuildingId,
         java.util.List<BuildingSummaryResponse> buildings
 ) {

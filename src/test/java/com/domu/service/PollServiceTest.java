@@ -83,6 +83,10 @@ class PollServiceTest {
                 "DOC",
                 true,
                 LocalDateTime.now(),
-                "ACTIVE");
+                "ACTIVE",
+                null,
+                null,
+                null,
+                null);
     }
 }

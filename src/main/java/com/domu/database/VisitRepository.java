@@ -27,7 +27,7 @@ public class VisitRepository {
         String sql = "INSERT INTO visits (visitor_name, visitor_document, visitor_type, company, created_at) VALUES (?, ?, ?, ?, ?)";
         LocalDateTime createdAt = visit.createdAt() != null ? visit.createdAt() : LocalDateTime.now();
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             statement.setString(1, visit.visitorName());
             if (visit.visitorDocument() != null && !visit.visitorDocument().isBlank()) {
                 statement.setString(2, visit.visitorDocument());
@@ -51,8 +51,7 @@ public class VisitRepository {
                             visit.visitorDocument(),
                             visit.visitorType(),
                             visit.company(),
-                            createdAt
-                    );
+                            createdAt);
                 }
             }
             throw new RepositoryException("No se pudo obtener el id de la visita");
@@ -70,7 +69,7 @@ public class VisitRepository {
         LocalDateTime createdAt = authorization.createdAt() != null ? authorization.createdAt() : LocalDateTime.now();
         String status = authorization.status() != null ? authorization.status() : "SCHEDULED";
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             statement.setLong(1, authorization.visitId());
             statement.setLong(2, authorization.residentUserId());
             statement.setLong(3, authorization.unitId());
@@ -96,8 +95,7 @@ public class VisitRepository {
                             authorization.validUntil(),
                             status,
                             authorization.qrHash(),
-                            createdAt
-                    );
+                            createdAt);
                 }
             }
             throw new RepositoryException("No se pudo obtener el id de la autorización de visita");
@@ -109,7 +107,7 @@ public class VisitRepository {
     public void updateAuthorizationStatus(Long authorizationId, String status) {
         String sql = "UPDATE visit_authorizations SET status = ? WHERE id = ?";
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, status);
             statement.setLong(2, authorizationId);
             Integer updated = statement.executeUpdate();
@@ -129,7 +127,7 @@ public class VisitRepository {
         LocalDateTime recordedAt = log.recordedAt() != null ? log.recordedAt() : LocalDateTime.now();
         LocalDateTime createdAt = log.createdAt() != null ? log.createdAt() : recordedAt;
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             statement.setLong(1, log.visitId());
             if (log.authorizationId() != null) {
                 statement.setLong(2, log.authorizationId());
@@ -161,8 +159,7 @@ public class VisitRepository {
                             log.door(),
                             log.authorizedByUserId(),
                             log.outcome(),
-                            createdAt
-                    );
+                            createdAt);
                 }
             }
             throw new RepositoryException("No se pudo obtener el id del registro de acceso");
@@ -174,7 +171,7 @@ public class VisitRepository {
     public Optional<VisitSummaryRow> findAuthorizationForResident(Long authorizationId, Long residentUserId) {
         String sql = baseSummaryQuery() + " WHERE va.id = ? AND va.resident_user_id = ? ORDER BY va.created_at DESC";
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, authorizationId);
             statement.setLong(2, residentUserId);
             try (ResultSet rs = statement.executeQuery()) {
@@ -191,7 +188,7 @@ public class VisitRepository {
     public Optional<VisitSummaryRow> findAuthorization(Long authorizationId) {
         String sql = baseSummaryQuery() + " WHERE va.id = ? ORDER BY va.created_at DESC";
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, authorizationId);
             try (ResultSet rs = statement.executeQuery()) {
                 if (rs.next()) {
@@ -208,7 +205,7 @@ public class VisitRepository {
         String sql = baseSummaryQuery() + " WHERE va.resident_user_id = ? ORDER BY va.created_at DESC";
         List<VisitSummaryRow> visits = new ArrayList<>();
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, residentUserId);
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
@@ -221,18 +218,41 @@ public class VisitRepository {
         }
     }
 
+    /**
+     * Encuentra todas las visitas de un edificio específico.
+     * Hace JOIN con housing_units para filtrar por building_id.
+     */
+    public List<VisitSummaryRow> findAuthorizationsForBuilding(Long buildingId) {
+        String sql = baseSummaryQuery()
+                + " JOIN housing_units hu ON hu.id = va.unit_id WHERE hu.building_id = ? ORDER BY va.created_at DESC";
+        List<VisitSummaryRow> visits = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, buildingId);
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    visits.add(mapSummary(rs));
+                }
+            }
+            return visits;
+        } catch (SQLException e) {
+            throw new RepositoryException("Error obteniendo visitas del edificio", e);
+        }
+    }
+
     public List<VisitSummaryRow> searchAuthorizationsForResident(Long residentUserId, String searchTerm) {
         StringBuilder sql = new StringBuilder(baseSummaryQuery())
                 .append(" WHERE va.resident_user_id = ? ");
         boolean hasSearch = searchTerm != null && !searchTerm.isBlank();
         if (hasSearch) {
-            sql.append("AND (LOWER(v.visitor_name) LIKE ? OR REPLACE(REPLACE(REPLACE(LOWER(COALESCE(v.visitor_document, '')), '.', ''), '-', ''), ' ', '') LIKE ?) ");
+            sql.append(
+                    "AND (LOWER(v.visitor_name) LIKE ? OR REPLACE(REPLACE(REPLACE(LOWER(COALESCE(v.visitor_document, '')), '.', ''), '-', ''), ' ', '') LIKE ?) ");
         }
         sql.append("ORDER BY va.created_at DESC");
 
         List<VisitSummaryRow> visits = new ArrayList<>();
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql.toString())) {
+                PreparedStatement statement = connection.prepareStatement(sql.toString())) {
             statement.setLong(1, residentUserId);
             if (hasSearch) {
                 String normalizedSearch = searchTerm.toLowerCase().trim();
@@ -250,6 +270,40 @@ public class VisitRepository {
             throw new RepositoryException("Error buscando visitas del residente", e);
         }
     }
+
+    public Optional<VisitRow> findLastVisitByDocument(String documentNumber) {
+        // Normalizar input: quitar puntos y guiones para búsqueda pura
+        String cleanDocument = documentNumber.replace(".", "").replace("-", "").trim();
+        
+        // Query busca comparando el documento limpio en la BD con el input limpio
+        // Nota: Esto permite encontrar el registro ya sea que se guardó como "12.345.678-9" o "123456789"
+        String sql = """
+            SELECT * FROM visits 
+            WHERE REPLACE(REPLACE(visitor_document, '.', ''), '-', '') = ? 
+            ORDER BY created_at DESC LIMIT 1
+        """;
+        
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, cleanDocument);
+            try (ResultSet rs = statement.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.of(new VisitRow(
+                        rs.getLong("id"),
+                        rs.getString("visitor_name"),
+                        rs.getString("visitor_document"),
+                        rs.getString("visitor_type"),
+                        rs.getString("company"),
+                        rs.getTimestamp("created_at").toLocalDateTime()
+                    ));
+                }
+            }
+            return Optional.empty();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error buscando visita por documento", e);
+        }
+    }
+
     private String baseSummaryQuery() {
         return """
                 SELECT va.id AS authorization_id,
@@ -295,8 +349,7 @@ public class VisitRepository {
                 validUntil,
                 rs.getString("status"),
                 rs.getTimestamp("authorization_created_at").toLocalDateTime(),
-                checkInAt
-        );
+                checkInAt);
     }
 
     public record VisitRow(
@@ -305,8 +358,7 @@ public class VisitRepository {
             String visitorDocument,
             String visitorType,
             String company,
-            LocalDateTime createdAt
-    ) {
+            LocalDateTime createdAt) {
     }
 
     public record VisitAuthorizationRow(
@@ -318,8 +370,7 @@ public class VisitRepository {
             LocalDateTime validUntil,
             String status,
             String qrHash,
-            LocalDateTime createdAt
-    ) {
+            LocalDateTime createdAt) {
     }
 
     public record AccessLogRow(
@@ -330,8 +381,7 @@ public class VisitRepository {
             String door,
             Long authorizedByUserId,
             String outcome,
-            LocalDateTime createdAt
-    ) {
+            LocalDateTime createdAt) {
     }
 
     public record VisitSummaryRow(
@@ -346,8 +396,6 @@ public class VisitRepository {
             LocalDateTime validUntil,
             String status,
             LocalDateTime createdAt,
-            LocalDateTime checkInAt
-    ) {
+            LocalDateTime checkInAt) {
     }
 }
-

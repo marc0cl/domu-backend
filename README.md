@@ -29,6 +29,8 @@ src/
 - JDK 21
 - Docker o un servidor MySQL accesible
 
+> **Nota:** El archivo `pom.xml` incluido en el proyecto es obsoleto y no debe utilizarse. El proyecto se gestiona exclusivamente con **Gradle** (`build.gradle.kts`).
+
 ## Variables de entorno
 
 Las siguientes variables controlan la configuración en tiempo de ejecución. Todas tienen valores por defecto pensados para desarrollo local, pero **deben** sobrescribirse en producción.
@@ -198,6 +200,242 @@ curl http://localhost:7000/api/incidents/my \
 # con rango de fechas (YYYY-MM-DD)
 curl "http://localhost:7000/api/incidents/my?from=2025-01-01&to=2025-01-31" \
   -H "Authorization: Bearer $TOKEN"
+```
+
+## Ejemplos de curl para gastos comunes (GGCC)
+
+> Requiere haber aplicado la migración `016_ggcc_enhancements.sql`. Para acciones de administrador necesitas enviar el header `X-Building-Id` con el edificio seleccionado en el frontend.
+
+Crear un periodo de GGCC (admin):
+```bash
+curl -X POST http://localhost:7000/api/finance/periods \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-Building-Id: 7" \
+  -d '{
+    "period": "2025-10",
+    "dueDate": "2025-10-10",
+    "notes": "Gasto común Octubre"
+  }'
+```
+
+Agregar cargos al periodo (admin):
+```bash
+curl -X POST http://localhost:7000/api/finance/periods/12/charges \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-Building-Id: 7" \
+  -d '{
+    "charges": [
+      {
+        "unitId": 21,
+        "category": "Mantención",
+        "description": "Aseo y jardinería",
+        "amount": 23500,
+        "origin": "PROVEEDOR",
+        "paid": false
+      }
+    ]
+  }'
+```
+
+Subir boleta para un cargo (admin, archivo opcional):
+```bash
+curl -X POST http://localhost:7000/api/finance/charges/55/receipt \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Building-Id: 7" \
+  -F "file=@/path/a/boleta.pdf"
+```
+
+Listar periodos creados (admin):
+```bash
+curl http://localhost:7000/api/finance/periods \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Building-Id: 7"
+```
+
+Listar periodos disponibles para el residente:
+```bash
+curl http://localhost:7000/api/finance/my-periods \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Ver detalle del periodo para el residente:
+```bash
+curl http://localhost:7000/api/finance/my-periods/12 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Descargar PDF del periodo (residente):
+```bash
+curl -o ggcc-2025-10.pdf \
+  http://localhost:7000/api/finance/my-periods/12/pdf \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Descargar boleta de un cargo (residente):
+```bash
+curl -o boleta-55.pdf \
+  http://localhost:7000/api/finance/charges/55/receipt \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+## Ejemplos de curl para gestión de unidades
+
+> Requiere rol de administrador.
+
+Listar unidades del edificio seleccionado:
+```bash
+curl http://localhost:7000/api/admin/housing-units \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Building-Id: 7"
+```
+
+Crear una nueva unidad:
+```bash
+curl -X POST http://localhost:7000/api/admin/housing-units \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Building-Id: 7" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "number": "301",
+    "tower": "A",
+    "floor": "3",
+    "aliquotPercentage": 1.5,
+    "squareMeters": 85.5
+  }'
+```
+
+Vincular un residente a una unidad:
+```bash
+curl -X POST http://localhost:7000/api/admin/housing-units/15/residents \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "userId": 42 }'
+```
+
+## Ejemplos de curl para votaciones (Polls)
+
+Listar votaciones activas:
+```bash
+curl "http://localhost:7000/api/polls?status=OPEN" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Crear una nueva votación (Admin):
+```bash
+curl -X POST http://localhost:7000/api/polls \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Elección de color de fachada",
+    "description": "Votación para decidir el nuevo color del edificio",
+    "closesAt": "2025-12-31T23:59:00",
+    "options": ["Blanco Invierno", "Gris Urbano", "Terracota"]
+  }'
+```
+
+Emitir un voto:
+```bash
+curl -X POST http://localhost:7000/api/polls/5/votes \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "optionId": 12 }'
+```
+
+## Ejemplos de curl para áreas comunes (Amenities)
+
+Listar áreas comunes disponibles:
+```bash
+curl http://localhost:7000/api/amenities \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Consultar disponibilidad de un área (Quincho):
+```bash
+curl "http://localhost:7000/api/amenities/3/availability?date=2025-11-15" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Reservar un bloque horario:
+```bash
+curl -X POST http://localhost:7000/api/amenities/3/reserve \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "date": "2025-11-15",
+    "startTime": "18:00",
+    "endTime": "22:00",
+    "guestCount": 10
+  }'
+```
+
+## Ejemplos de curl para registro de comunidades (Admin)
+
+> Este endpoint es público y permite a un administrador postular su comunidad. Requiere envío de archivo (documento de respaldo).
+
+```bash
+curl -X POST http://localhost:7000/api/buildings/requests \
+  -F "name=Edificio Plaza Central" \
+  -F "address=Av. Libertad 123" \
+  -F "commune=Santiago" \
+  -F "city=Metropolitana" \
+  -F "adminName=Pedro Administrador" \
+  -F "adminEmail=pedro.admin@example.com" \
+  -F "adminPhone=+56911112222" \
+  -F "proofText=Adjunto acta de asamblea de nombramiento" \
+  -F "document=@/ruta/al/archivo/acta.pdf"
+```
+
+## Ejemplos de curl para contactos frecuentes (Visitas)
+
+Gestión de "agenda" de visitantes para registros rápidos.
+
+Crear contacto:
+```bash
+curl -X POST http://localhost:7000/api/visit-contacts \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "visitorName": "Juan Amigo",
+    "visitorDocument": "11.222.333-4",
+    "visitorType": "VISIT",
+    "notes": "Amigo cercano"
+  }'
+```
+
+Registrar visita desde contacto existente:
+```bash
+curl -X POST http://localhost:7000/api/visit-contacts/5/register \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "validForMinutes": 180 }'
+```
+
+## Gestión de Perfil y Seguridad
+
+Actualizar datos personales:
+```bash
+curl -X PUT http://localhost:7000/api/users/me/profile \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firstName": "Juan",
+    "lastName": "Pérez Soto",
+    "phone": "+56988887777",
+    "documentNumber": "12.345.678-9"
+  }'
+```
+
+Cambiar contraseña:
+```bash
+curl -X POST http://localhost:7000/api/users/me/password \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "currentPassword": "ClaveAntigua123!",
+    "newPassword": "NuevaClaveSuperSegura2025!"
+  }'
 ```
 
 ## Pruebas

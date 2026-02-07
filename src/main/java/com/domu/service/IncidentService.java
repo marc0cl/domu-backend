@@ -25,7 +25,14 @@ public class IncidentService {
         this.incidentRepository = incidentRepository;
     }
 
-    public IncidentResponse create(User user, IncidentRequest request) {
+    /**
+     * Crea un incidente asociado al edificio seleccionado.
+     * 
+     * @param user       Usuario que crea el incidente
+     * @param buildingId ID del edificio seleccionado (del header X-Building-Id)
+     * @param request    Datos del incidente
+     */
+    public IncidentResponse create(User user, Long buildingId, IncidentRequest request) {
         ensureAuthenticated(user);
         validate(request);
         String status = normalizeStatus(request.getStatus());
@@ -36,25 +43,45 @@ public class IncidentService {
                 null,
                 user.id(),
                 user.unitId(),
+                buildingId, // Asociar directamente al edificio seleccionado
                 request.getTitle().trim(),
                 request.getDescription().trim(),
                 request.getCategory().trim(),
                 priority,
                 status,
+                null, // assignedToUserId initially null
                 createdAt,
                 createdAt));
 
         return toResponse(saved);
     }
 
-    public IncidentListResponse list(User user, LocalDate from, LocalDate to) {
+    /**
+     * Lista incidentes.
+     * Si el usuario es admin/concierge y se proporciona buildingId, filtra por
+     * edificio.
+     * Si el usuario es admin/concierge y NO se proporciona buildingId, retorna
+     * lista vacía
+     * (debe seleccionar un edificio).
+     * Los residentes solo ven sus propios incidentes.
+     */
+    public IncidentListResponse list(User user, Long buildingId, LocalDate from, LocalDate to) {
         ensureAuthenticated(user);
         LocalDateTime fromDateTime = from != null ? from.atStartOfDay() : null;
         LocalDateTime toDateTime = to != null ? to.atTime(LocalTime.MAX) : null;
         List<IncidentRepository.IncidentRow> rows;
+
         if (isAdminOrConcierge(user)) {
-            rows = incidentRepository.findAll(fromDateTime, toDateTime);
+            // Para administradores y conserjes, el buildingId es obligatorio
+            if (buildingId == null) {
+                // Retornar lista vacía si no hay buildingId seleccionado
+                rows = new ArrayList<>();
+            } else {
+                // Filtrar por edificio
+                rows = incidentRepository.findByBuilding(buildingId, fromDateTime, toDateTime);
+            }
         } else {
+            // Los residentes solo ven sus propios incidentes
             rows = incidentRepository.findByUser(user.id(), fromDateTime, toDateTime);
         }
 
@@ -86,16 +113,27 @@ public class IncidentService {
         return toResponse(updated);
     }
 
+    public IncidentResponse updateAssignment(User user, Long incidentId, Long assignedToUserId) {
+        ensureAdminOrConcierge(user);
+        IncidentRepository.IncidentRow existing = incidentRepository.findById(incidentId)
+                .orElseThrow(() -> new ValidationException("Incidente no encontrado"));
+        IncidentRepository.IncidentRow updated = incidentRepository.updateAssignment(existing.id(), assignedToUserId,
+                LocalDateTime.now());
+        return toResponse(updated);
+    }
+
     private IncidentResponse toResponse(IncidentRepository.IncidentRow row) {
         return new IncidentResponse(
                 row.id(),
                 row.userId(),
                 row.unitId(),
+                row.buildingId(),
                 row.title(),
                 row.description(),
                 row.category(),
                 row.priority(),
                 row.status(),
+                row.assignedToUserId(),
                 row.createdAt(),
                 row.updatedAt());
     }

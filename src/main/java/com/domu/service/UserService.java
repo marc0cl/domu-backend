@@ -2,8 +2,11 @@ package com.domu.service;
 
 import com.domu.database.UserRepository;
 import com.domu.database.UserBuildingRepository;
+import com.domu.database.UserConfirmationRepository;
+import com.domu.database.StaffRepository;
 import com.domu.domain.core.User;
 import com.domu.security.PasswordHasher;
+import com.domu.dto.StaffRequest;
 import com.google.inject.Inject;
 
 import java.time.LocalDate;
@@ -19,14 +22,173 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final UserBuildingRepository userBuildingRepository;
+    private final UserConfirmationRepository userConfirmationRepository;
+    private final StaffRepository staffRepository;
     private final PasswordHasher passwordHasher;
+    private final MarketplaceStorageService storageService;
+    private final GcsStorageService gcsStorageService;
 
     @Inject
     public UserService(UserRepository userRepository, UserBuildingRepository userBuildingRepository,
-            PasswordHasher passwordHasher) {
+            UserConfirmationRepository userConfirmationRepository,
+            StaffRepository staffRepository,
+            PasswordHasher passwordHasher,
+            MarketplaceStorageService storageService,
+            GcsStorageService gcsStorageService) {
         this.userRepository = userRepository;
         this.userBuildingRepository = userBuildingRepository;
+        this.userConfirmationRepository = userConfirmationRepository;
+        this.staffRepository = staffRepository;
         this.passwordHasher = passwordHasher;
+        this.storageService = storageService;
+        this.gcsStorageService = gcsStorageService;
+    }
+
+    public void updateAvatar(User user, String fileName, byte[] content) {
+        // Generate the new path first (before uploading)
+        String ext = com.domu.service.ImageOptimizer.outputExtension();
+        String newPath = gcsStorageService.profileAvatarPath(user.id(), ext);
+        
+        // Delete old avatar from GCS if it exists and is different from the new path
+        String oldAvatarPath = user.avatarBoxId();
+        if (oldAvatarPath != null && !oldAvatarPath.isBlank() && !oldAvatarPath.equals(newPath)) {
+            try {
+                gcsStorageService.delete(oldAvatarPath);
+            } catch (Exception e) {
+                // Log but don't fail if deletion fails (image might not exist)
+            }
+        }
+        
+        // Upload the new image (this will overwrite if path is the same)
+        String uploadedPath = storageService.uploadProfileImage(user.id(), fileName, content);
+        userRepository.updateAvatar(user.id(), uploadedPath);
+    }
+
+    public void updatePrivacyAvatar(User user, String fileName, byte[] content) {
+        // Generate the new path first (before uploading)
+        String ext = com.domu.service.ImageOptimizer.outputExtension();
+        String newPath = gcsStorageService.profilePrivacyAvatarPath(user.id(), ext);
+        
+        // Delete old privacy avatar from GCS if it exists and is different from the new path
+        String oldPrivacyAvatarPath = user.privacyAvatarBoxId();
+        if (oldPrivacyAvatarPath != null && !oldPrivacyAvatarPath.isBlank() && !oldPrivacyAvatarPath.equals(newPath)) {
+            try {
+                gcsStorageService.delete(oldPrivacyAvatarPath);
+            } catch (Exception e) {
+                // Log but don't fail if deletion fails (image might not exist)
+            }
+        }
+        
+        // Upload the new image (this will overwrite if path is the same)
+        String uploadedPath = storageService.uploadPrivacyImage(user.id(), fileName, content);
+        userRepository.updatePrivacyAvatar(user.id(), uploadedPath);
+    }
+
+    public User adminCreateUser(
+            Long unitId,
+            Long roleId,
+            String firstName,
+            String lastName,
+            LocalDate birthDate,
+            String email,
+            String phone,
+            String documentNumber,
+            Boolean resident,
+            String rawPassword,
+            Long buildingId) {
+        validateRegistration(firstName, lastName, email, phone, documentNumber, resident, rawPassword);
+        
+        String normalizedEmail = email.toLowerCase();
+        userRepository.findByEmail(normalizedEmail).ifPresent(existing -> {
+            throw new UserAlreadyExistsException(normalizedEmail);
+        });
+
+        String passwordHash = passwordHasher.hash(rawPassword);
+        User user = new User(
+                null,
+                unitId,
+                roleId,
+                firstName.trim(),
+                lastName.trim(),
+                normalizedEmail,
+                phone,
+                birthDate,
+                passwordHash,
+                documentNumber,
+                resident,
+                LocalDateTime.now(),
+                "PENDING",
+                null,
+                null,
+                null,
+                null);
+        User saved = userRepository.save(user);
+        
+        if (buildingId != null) {
+            userBuildingRepository.addUserToBuilding(saved.id(), buildingId);
+        }
+        
+        // Si el usuario es staff o conserje, crear registro en tabla staff
+        // Nota: Asumiendo que roleId 2 o 3 son staff/conserje, o puedes verificar por nombre del rol
+        // Por ahora, crearemos staff si roleId != 1 (admin) y != null y resident == false
+        if (buildingId != null && roleId != null && roleId != 1L && (resident == null || !resident)) {
+            try {
+                // Determinar posición basada en roleId o usar un valor por defecto
+                String position = "Personal"; // Valor por defecto
+                // Puedes agregar lógica aquí para determinar la posición según el roleId
+                
+                StaffRequest staffRequest = new StaffRequest(
+                    buildingId,
+                    firstName.trim(),
+                    lastName.trim(),
+                    documentNumber,
+                    email.toLowerCase(),
+                    phone,
+                    position,
+                    true // activo por defecto
+                );
+                
+                // Solo crear si no existe ya un staff con este RUT
+                staffRepository.findByRut(documentNumber).ifPresentOrElse(
+                    existing -> {
+                        // Ya existe, no hacer nada o actualizar
+                    },
+                    () -> {
+                        // Crear nuevo registro de staff
+                        staffRepository.insert(staffRequest);
+                    }
+                );
+            } catch (Exception e) {
+                // Log el error pero no fallar la creación del usuario
+                System.err.println("Error creando registro de staff: " + e.getMessage());
+            }
+        }
+        
+        // Generate confirmation token (7 days)
+        String token = java.util.UUID.randomUUID().toString();
+        userConfirmationRepository.insert(saved.id(), token, LocalDateTime.now().plusDays(7));
+        
+        return saved;
+    }
+
+    public void confirmUser(String token) {
+        UserConfirmationRepository.ConfirmationRow confirmation = userConfirmationRepository.findByToken(token)
+                .orElseThrow(() -> new ValidationException("Token de confirmación inválido"));
+
+        if (confirmation.confirmedAt() != null) {
+            throw new ValidationException("Este token ya ha sido utilizado");
+        }
+
+        if (confirmation.expiresAt().isBefore(LocalDateTime.now())) {
+            throw new ValidationException("El token ha expirado (validez de 7 días)");
+        }
+
+        userRepository.setStatus(confirmation.userId(), "ACTIVE");
+        userConfirmationRepository.markAsConfirmed(token);
+    }
+
+    public String getConfirmationToken(Long userId) {
+        return userConfirmationRepository.findLatestTokenForUser(userId).orElse(null);
     }
 
     public User registerUser(
@@ -63,7 +225,11 @@ public class UserService {
                 documentNumber,
                 resident,
                 LocalDateTime.now(),
-                "ACTIVE");
+                "ACTIVE",
+                null,
+                null,
+                null,
+                null);
         return userRepository.save(user);
     }
 
@@ -91,7 +257,11 @@ public class UserService {
                 documentNumber,
                 false,
                 LocalDateTime.now(),
-                "ACTIVE");
+                "ACTIVE",
+                null,
+                null,
+                null,
+                null);
         User saved = userRepository.save(user);
         userBuildingRepository.addUserToBuilding(saved.id(), buildingId);
         return saved;
@@ -114,7 +284,7 @@ public class UserService {
         return userRepository.findByEmail(email.toLowerCase());
     }
 
-    public User updateProfile(User user, String firstName, String lastName, String phone, String documentNumber) {
+    public User updateProfile(User user, String firstName, String lastName, String phone, String documentNumber, String displayName) {
         if (user == null || user.id() == null) {
             throw new ValidationException("Usuario inválido");
         }
@@ -127,8 +297,14 @@ public class UserService {
         if (isBlank(documentNumber)) {
             throw new ValidationException("Debes ingresar un documento de identidad");
         }
-        return userRepository.updateProfile(user.id(), firstName.trim(), lastName.trim(), phone.trim(),
+        User updated = userRepository.updateProfile(user.id(), firstName.trim(), lastName.trim(), phone.trim(),
                 documentNumber.trim());
+        // Update display name if provided
+        if (displayName != null) {
+            String trimmed = displayName.trim();
+            userRepository.updateDisplayName(user.id(), trimmed.isEmpty() ? null : trimmed);
+        }
+        return userRepository.findById(user.id()).orElse(updated);
     }
 
     public void changePassword(User user, String oldPassword, String newPassword) {

@@ -2,7 +2,6 @@ package com.domu.domain.core;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Objects;
 
 public record User(
         Long id,
@@ -17,30 +16,31 @@ public record User(
         String documentNumber,
         Boolean resident,
         LocalDateTime createdAt,
-        String status
+        String status,
+        String bio,
+        String avatarBoxId,
+        String privacyAvatarBoxId,
+        String displayName
 ) {
     public User {
-        Objects.requireNonNull(firstName, "firstName");
-        Objects.requireNonNull(lastName, "lastName");
-        Objects.requireNonNull(email, "email");
-        Objects.requireNonNull(passwordHash, "passwordHash");
+        if (email == null) email = "unknown@domu.app";
+        if (firstName == null) firstName = "Usuario";
+        if (lastName == null) lastName = "DOMU";
     }
 
     public User withId(Long newId) {
         return new User(
-                newId,
-                unitId,
-                roleId,
-                firstName,
-                lastName,
-                email,
-                phone,
-                birthDate,
-                passwordHash,
-                documentNumber,
-                resident,
-                createdAt,
-                status
+                newId, unitId, roleId, firstName, lastName, email, phone,
+                birthDate, passwordHash, documentNumber, resident, createdAt,
+                status, bio, avatarBoxId, privacyAvatarBoxId, displayName
         );
+    }
+
+    /** Returns displayName if set, otherwise firstName + lastName. */
+    public String publicName() {
+        if (displayName != null && !displayName.isBlank()) {
+            return displayName;
+        }
+        return firstName + " " + lastName;
     }
 }

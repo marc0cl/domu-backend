@@ -36,13 +36,15 @@ public class AmenityService {
     private final AmenityRepository amenityRepository;
     private final BuildingRepository buildingRepository;
     private final UserBuildingRepository userBuildingRepository;
+    private final CommonExpenseService commonExpenseService;
 
     @Inject
     public AmenityService(AmenityRepository amenityRepository, BuildingRepository buildingRepository,
-            UserBuildingRepository userBuildingRepository) {
+            UserBuildingRepository userBuildingRepository, CommonExpenseService commonExpenseService) {
         this.amenityRepository = amenityRepository;
         this.buildingRepository = buildingRepository;
         this.userBuildingRepository = userBuildingRepository;
+        this.commonExpenseService = commonExpenseService;
     }
 
     // ==================== AMENITIES ====================
@@ -248,6 +250,12 @@ public class AmenityService {
 
     public ReservationResponse createReservation(User user, Long amenityId, ReservationRequest request) {
         ensureAuthenticated(user);
+
+        // RF_09: Bloqueo ante mora
+        if (commonExpenseService.hasDebt(user)) {
+            throw new ValidationException("No puedes realizar reservas debido a que tienes deudas pendientes de gastos comunes.");
+        }
+
         AmenityRow amenity = amenityRepository.findAmenityById(amenityId)
                 .orElseThrow(() -> new ValidationException("Área común no encontrada"));
         ensureSameBuilding(user, amenity.buildingId());

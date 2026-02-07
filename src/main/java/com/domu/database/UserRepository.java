@@ -1,7 +1,6 @@
 package com.domu.database;
 
 import com.domu.domain.core.User;
-
 import com.google.inject.Inject;
 
 import javax.sql.DataSource;
@@ -13,6 +12,8 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 public class UserRepository {
@@ -43,23 +44,51 @@ public class UserRepository {
         }
     }
 
-    public void updatePassword(Long id, String passwordHash) {
+    public void updatePassword(Long id, String hash) {
         String sql = "UPDATE users SET password_hash = ? WHERE id = ?";
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setString(1, passwordHash);
+            statement.setString(1, hash);
             statement.setLong(2, id);
             int updated = statement.executeUpdate();
             if (updated == 0) {
                 throw new RepositoryException("No user updated");
             }
         } catch (SQLException e) {
-            throw new RepositoryException("Error updating password", e);
+            throw new RepositoryException("Error updating user password", e);
+        }
+    }
+
+    public void setStatus(Long id, String status) {
+        String sql = "UPDATE users SET status = ? WHERE id = ?";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, status);
+            statement.setLong(2, id);
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error updating user status", e);
+        }
+    }
+
+    public void updateUnitId(Long userId, Long unitId) {
+        String sql = "UPDATE users SET unit_id = ? WHERE id = ?";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            if (unitId != null) {
+                statement.setLong(1, unitId);
+            } else {
+                statement.setNull(1, Types.BIGINT);
+            }
+            statement.setLong(2, userId);
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error updating user unit_id", e);
         }
     }
 
     public Optional<User> findByEmail(String email) {
-        String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status FROM users WHERE email = ?";
+        String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status, bio, avatar_box_id, privacy_avatar_box_id, display_name FROM users WHERE email = ?";
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, email);
@@ -75,7 +104,7 @@ public class UserRepository {
     }
 
     public Optional<User> findById(Long id) {
-        String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status FROM users WHERE id = ?";
+        String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status, bio, avatar_box_id, privacy_avatar_box_id, display_name FROM users WHERE id = ?";
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, id);
@@ -91,81 +120,186 @@ public class UserRepository {
     }
 
     public User save(User user) {
-        String sql = "INSERT INTO users (unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO users (unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, status, bio, avatar_box_id, privacy_avatar_box_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-            if (user.unitId() != null) {
-                statement.setLong(1, user.unitId());
-            } else {
-                statement.setNull(1, Types.BIGINT);
-            }
-            if (user.roleId() != null) {
-                statement.setLong(2, user.roleId());
-            } else {
-                statement.setNull(2, Types.BIGINT);
-            }
+            if (user.unitId() != null) statement.setLong(1, user.unitId()); else statement.setNull(1, Types.BIGINT);
+            if (user.roleId() != null) statement.setLong(2, user.roleId()); else statement.setNull(2, Types.BIGINT);
             statement.setString(3, user.firstName());
             statement.setString(4, user.lastName());
-            if (user.birthDate() != null) {
-                statement.setDate(5, Date.valueOf(user.birthDate()));
-            } else {
-                statement.setNull(5, Types.DATE);
-            }
+            if (user.birthDate() != null) statement.setDate(5, Date.valueOf(user.birthDate())); else statement.setNull(5, Types.DATE);
             statement.setString(6, user.email());
             statement.setString(7, user.phone());
             statement.setString(8, user.passwordHash());
             statement.setString(9, user.documentNumber());
             statement.setBoolean(10, user.resident());
-            if (user.status() != null) {
-                statement.setString(11, user.status());
-            } else {
-                statement.setString(11, "ACTIVE");
-            }
+            statement.setString(11, user.status() != null ? user.status() : "ACTIVE");
+            statement.setString(12, user.bio());
+            statement.setString(13, user.avatarBoxId());
+            statement.setString(14, user.privacyAvatarBoxId());
 
             statement.executeUpdate();
             try (ResultSet generatedKeys = statement.getGeneratedKeys()) {
-                if (generatedKeys.next()) {
-                    Long id = generatedKeys.getLong(1);
-                    return user.withId(id);
-                }
+                if (generatedKeys.next()) return user.withId(generatedKeys.getLong(1));
             }
-            throw new RepositoryException("User insert did not return a generated identifier");
+            throw new RepositoryException("User insert did not return an ID");
         } catch (SQLException e) {
             throw new RepositoryException("Error saving user", e);
         }
     }
 
-    private User mapRow(ResultSet resultSet) throws SQLException {
-        Long id = resultSet.getLong("id");
-        Object unitObject = resultSet.getObject("unit_id");
-        Long unitId = unitObject != null ? resultSet.getLong("unit_id") : null;
-        Object roleObject = resultSet.getObject("role_id");
-        Long roleId = roleObject != null ? resultSet.getLong("role_id") : null;
-        String firstName = resultSet.getString("first_name");
-        String lastName = resultSet.getString("last_name");
-        Date birthDateRaw = resultSet.getDate("birth_date");
-        LocalDate birthDate = birthDateRaw != null ? birthDateRaw.toLocalDate() : null;
-        String email = resultSet.getString("email");
-        String phone = resultSet.getString("phone");
-        String passwordHash = resultSet.getString("password_hash");
-        String documentNumber = resultSet.getString("document_number");
-        Boolean resident = (Boolean) resultSet.getObject("resident");
-        java.sql.Timestamp createdAtRaw = resultSet.getTimestamp("created_at");
-        java.time.LocalDateTime createdAt = createdAtRaw != null ? createdAtRaw.toLocalDateTime() : null;
-        String status = resultSet.getString("status");
+    public void updateAvatar(Long userId, String avatarBoxId) {
+        String sql = "UPDATE users SET avatar_box_id = ? WHERE id = ?";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, avatarBoxId);
+            statement.setLong(2, userId);
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error updating user avatar", e);
+        }
+    }
+
+    public void updatePrivacyAvatar(Long userId, String privacyAvatarBoxId) {
+        String sql = "UPDATE users SET privacy_avatar_box_id = ? WHERE id = ?";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, privacyAvatarBoxId);
+            statement.setLong(2, userId);
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error updating user privacy avatar", e);
+        }
+    }
+
+    public List<ChatNeighborSummary> findNeighborsForChat(Long buildingId, Long currentUserId) {
+        String sql = """
+                SELECT u.id, hu.number AS unit_number,
+                       u.display_name, u.avatar_box_id, u.privacy_avatar_box_id
+                FROM users u
+                INNER JOIN user_buildings ub ON ub.user_id = u.id AND ub.building_id = ?
+                INNER JOIN housing_units hu ON hu.id = u.unit_id
+                WHERE u.id != ? AND u.status = 'ACTIVE'
+                  AND u.id NOT IN (
+                      SELECT p2.user_id FROM chat_participant p1
+                      JOIN chat_participant p2 ON p1.room_id = p2.room_id AND p2.user_id != p1.user_id
+                      WHERE p1.user_id = ?
+                  )
+                  AND u.id NOT IN (
+                      SELECT CASE WHEN cr.sender_id = ? THEN cr.receiver_id ELSE cr.sender_id END
+                      FROM chat_request cr
+                      WHERE (cr.sender_id = ? OR cr.receiver_id = ?) AND cr.status IN ('PENDING','APPROVED')
+                  )
+                ORDER BY hu.number ASC
+                """;
+        List<ChatNeighborSummary> neighbors = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, buildingId);
+            statement.setLong(2, currentUserId);
+            statement.setLong(3, currentUserId);
+            statement.setLong(4, currentUserId);
+            statement.setLong(5, currentUserId);
+            statement.setLong(6, currentUserId);
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    neighbors.add(new ChatNeighborSummary(
+                            rs.getLong("id"),
+                            rs.getString("unit_number"),
+                            rs.getString("display_name"),
+                            rs.getString("avatar_box_id"),
+                            rs.getString("privacy_avatar_box_id")
+                    ));
+                }
+            }
+            return neighbors;
+        } catch (SQLException e) {
+            throw new RepositoryException("Error fetching neighbors for chat", e);
+        }
+    }
+
+    public void updateDisplayName(Long userId, String displayName) {
+        String sql = "UPDATE users SET display_name = ? WHERE id = ?";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, displayName);
+            statement.setLong(2, userId);
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error updating display name", e);
+        }
+    }
+
+    public record ChatNeighborSummary(Long id, String unitNumber, String displayName, String avatarUrl, String privacyAvatarBoxId) {}
+
+    public List<ResidentWithUnit> findResidentsByBuilding(Long buildingId) {
+        String sql = """
+                SELECT DISTINCT u.id, u.unit_id, u.role_id, u.first_name, u.last_name, u.email, u.phone,
+                       u.document_number, u.resident, u.created_at, u.status,
+                       hu.number AS unit_number, hu.tower, hu.floor
+                FROM users u
+                INNER JOIN user_buildings ub ON ub.user_id = u.id AND ub.building_id = ?
+                LEFT JOIN housing_units hu ON hu.id = u.unit_id AND hu.building_id = ?
+                WHERE u.status = 'ACTIVE'
+                ORDER BY hu.floor, hu.number, u.first_name, u.last_name
+                """;
+        List<ResidentWithUnit> residents = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, buildingId);
+            statement.setLong(2, buildingId);
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    residents.add(mapResidentWithUnit(rs));
+                }
+            }
+            return residents;
+        } catch (SQLException e) {
+            throw new RepositoryException("Error fetching residents by building", e);
+        }
+    }
+
+    private ResidentWithUnit mapResidentWithUnit(ResultSet rs) throws SQLException {
+        return new ResidentWithUnit(
+                rs.getLong("id"),
+                (Long) rs.getObject("unit_id"),
+                (Long) rs.getObject("role_id"),
+                rs.getString("first_name"),
+                rs.getString("last_name"),
+                rs.getString("email"),
+                rs.getString("phone"),
+                rs.getString("document_number"),
+                rs.getBoolean("resident"),
+                rs.getTimestamp("created_at") != null ? rs.getTimestamp("created_at").toLocalDateTime() : null,
+                rs.getString("status"),
+                rs.getString("unit_number"),
+                rs.getString("tower"),
+                rs.getString("floor"));
+    }
+
+    public record ResidentWithUnit(Long id, Long unitId, Long roleId, String firstName, String lastName, String email, String phone, String documentNumber, Boolean resident, java.time.LocalDateTime createdAt, String status, String unitNumber, String tower, String floor) {}
+
+    private User mapRow(ResultSet rs) throws SQLException {
+        Date birthDateRaw = rs.getDate("birth_date");
+        java.sql.Timestamp createdAtRaw = rs.getTimestamp("created_at");
+        
         return new User(
-                id,
-                unitId,
-                roleId,
-                firstName,
-                lastName,
-                email,
-                phone,
-                birthDate,
-                passwordHash,
-                documentNumber,
-                resident,
-                createdAt,
-                status);
+                rs.getLong("id"),
+                (Long) rs.getObject("unit_id"),
+                (Long) rs.getObject("role_id"),
+                rs.getString("first_name"),
+                rs.getString("last_name"),
+                rs.getString("email"),
+                rs.getString("phone"),
+                birthDateRaw != null ? birthDateRaw.toLocalDate() : null,
+                rs.getString("password_hash"),
+                rs.getString("document_number"),
+                rs.getBoolean("resident"),
+                createdAtRaw != null ? createdAtRaw.toLocalDateTime() : null,
+                rs.getString("status"),
+                rs.getString("bio"),
+                rs.getString("avatar_box_id"),
+                rs.getString("privacy_avatar_box_id"),
+                rs.getString("display_name"));
     }
 }
