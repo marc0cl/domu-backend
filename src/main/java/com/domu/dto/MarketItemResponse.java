@@ -18,6 +18,14 @@ public record MarketItemResponse(
     String originalPriceLink,
     String status,
     String mainImageUrl,
+    List<ImageInfo> images,
     List<String> imageUrls,
     LocalDateTime createdAt
-) {}
+) {
+    @Builder
+    public record ImageInfo(
+        Long id,
+        String url,
+        boolean isMain
+    ) {}
+}

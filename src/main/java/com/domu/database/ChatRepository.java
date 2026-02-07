@@ -25,7 +25,7 @@ public class ChatRepository {
                 FROM chat_room r
                 JOIN chat_participant p ON r.id = p.room_id
                 LEFT JOIN market_item i ON r.item_id = i.id
-                WHERE p.user_id = ? AND r.building_id = ?
+                WHERE p.user_id = ? AND r.building_id = ? AND p.hidden_at IS NULL
                 ORDER BY r.last_message_at DESC
                 """;
         try (Connection conn = dataSource.getConnection();
@@ -159,7 +159,8 @@ public class ChatRepository {
 
     private List<ChatRoomResponse.UserSummary> findParticipantsByRoom(Long roomId) throws SQLException {
         String sql = """
-                SELECT u.id, u.first_name, u.last_name, p.is_typing
+                SELECT u.id, u.first_name, u.last_name, u.display_name,
+                       u.avatar_box_id, p.is_typing
                 FROM chat_participant p
                 JOIN users u ON p.user_id = u.id
                 WHERE p.room_id = ?
@@ -170,9 +171,14 @@ public class ChatRepository {
             try (ResultSet rs = stmt.executeQuery()) {
                 List<ChatRoomResponse.UserSummary> users = new ArrayList<>();
                 while (rs.next()) {
+                    String displayName = rs.getString("display_name");
+                    String name = (displayName != null && !displayName.isBlank())
+                            ? displayName
+                            : rs.getString("first_name") + " " + rs.getString("last_name");
                     users.add(ChatRoomResponse.UserSummary.builder()
                             .id(rs.getLong("id"))
-                            .name(rs.getString("first_name") + " " + rs.getString("last_name"))
+                            .name(name)
+                            .photoUrl(rs.getString("avatar_box_id"))
                             .isTyping(rs.getBoolean("is_typing"))
                             .build());
                 }
@@ -197,6 +203,33 @@ public class ChatRepository {
                 .boxFileId(rs.getString("box_file_id"))
                 .createdAt(rs.getTimestamp("created_at").toLocalDateTime())
                 .build();
+    }
+
+    public void hideRoom(Long roomId, Long userId) {
+        String sql = "UPDATE chat_participant SET hidden_at = CURRENT_TIMESTAMP WHERE room_id = ? AND user_id = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, roomId);
+            stmt.setLong(2, userId);
+            int rows = stmt.executeUpdate();
+            if (rows == 0) {
+                throw new RepositoryException("No se encontró la participación en la sala");
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error ocultando sala de chat", e);
+        }
+    }
+
+    public void unhideRoom(Long roomId, Long userId) {
+        String sql = "UPDATE chat_participant SET hidden_at = NULL WHERE room_id = ? AND user_id = ? AND hidden_at IS NOT NULL";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, roomId);
+            stmt.setLong(2, userId);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error restaurando sala de chat", e);
+        }
     }
 
     public Optional<Long> findDirectChatRoom(Long userId1, Long userId2) {

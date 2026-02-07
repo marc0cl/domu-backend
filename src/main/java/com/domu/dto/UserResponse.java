@@ -18,6 +18,7 @@ public record UserResponse(
         String status,
         String avatarBoxId,
         String privacyAvatarBoxId,
+        String displayName,
         Long activeBuildingId,
         java.util.List<BuildingSummaryResponse> buildings
 ) {

@@ -86,6 +86,7 @@ class PollServiceTest {
                 "ACTIVE",
                 null,
                 null,
+                null,
                 null);
     }
 }

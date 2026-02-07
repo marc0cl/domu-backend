@@ -16,14 +16,21 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 import javax.sql.DataSource;
 
 public class DependencyInjectionModule extends AbstractModule {
 
     private static Injector injector;
+    private static final Map<String, String> dotEnvVars = loadDotEnv();
 
     public static Injector getInstance() {
         if (injector == null) {
@@ -39,6 +46,8 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(CommonExpenseService.class).in(Scopes.SINGLETON);
         bind(CommonExpenseReceiptStorageService.class).in(Scopes.SINGLETON);
         bind(CommonExpensePdfService.class).in(Scopes.SINGLETON);
+        bind(PaymentReceiptPdfService.class).in(Scopes.SINGLETON);
+        bind(ChargeReceiptPdfService.class).in(Scopes.SINGLETON);
         bind(BuildingService.class).in(Scopes.SINGLETON);
         bind(CommunityRegistrationStorageService.class).in(Scopes.SINGLETON);
         bind(VisitService.class).in(Scopes.SINGLETON);
@@ -52,6 +61,7 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(ChatRequestService.class).in(Scopes.SINGLETON);
         bind(UserProfileService.class).in(Scopes.SINGLETON);
         bind(ForumService.class).in(Scopes.SINGLETON);
+        bind(GcsStorageService.class).in(Scopes.SINGLETON);
         bind(MarketplaceStorageService.class).in(Scopes.SINGLETON);
         bind(ParcelService.class).in(Scopes.SINGLETON);
         bind(TaskService.class).in(Scopes.SINGLETON);
@@ -113,6 +123,8 @@ public class DependencyInjectionModule extends AbstractModule {
                         AppConfig.DEFAULT_PORT),
                 resolve(properties, "box.developerToken", "BOX_TOKEN", ""),
                 resolve(properties, "box.rootFolderId", "BOX_ROOT_FOLDER_ID", "0"),
+                resolve(properties, "gcs.bucketName", "GCS_BUCKET_NAME", ""),
+                resolve(properties, "gcs.keyFilePath", "GCS_KEY_FILE_PATH", ""),
                 resolve(properties, "mail.host", "MAIL_HOST", ""),
                 parseInteger(resolve(properties, "mail.port", "MAIL_PORT", "587"), 587),
                 resolve(properties, "mail.user", "MAIL_USER", ""),
@@ -125,7 +137,39 @@ public class DependencyInjectionModule extends AbstractModule {
     @Provides
     @Singleton
     HikariDataSource dataSource(final AppConfig config) {
-        return DataSourceFactory.create(config);
+        HikariDataSource ds = DataSourceFactory.create(config);
+        runPendingMigrations(ds);
+        return ds;
+    }
+
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(DependencyInjectionModule.class);
+
+    private static void runPendingMigrations(HikariDataSource ds) {
+        String[] migrations = {
+            "ALTER TABLE users ADD COLUMN display_name VARCHAR(100) NULL",
+            "ALTER TABLE market_item MODIFY COLUMN main_image_url TEXT",
+            "ALTER TABLE market_item_image MODIFY COLUMN url TEXT",
+            "ALTER TABLE market_item_image MODIFY COLUMN box_file_id TEXT",
+            "ALTER TABLE users MODIFY COLUMN avatar_box_id TEXT",
+            "ALTER TABLE users MODIFY COLUMN privacy_avatar_box_id TEXT"
+        };
+        try (java.sql.Connection conn = ds.getConnection()) {
+            for (String sql : migrations) {
+                try (java.sql.Statement stmt = conn.createStatement()) {
+                    stmt.execute(sql);
+                    LOG.info("Migration OK: {}", sql);
+                } catch (java.sql.SQLException e) {
+                    // Error code 1060 = Duplicate column name — safe to ignore
+                    if (e.getErrorCode() == 1060) {
+                        LOG.info("Column already exists, skipping: {}", sql);
+                    } else {
+                        LOG.warn("Migration warning: {} — {}", sql, e.getMessage());
+                    }
+                }
+            }
+        } catch (java.sql.SQLException e) {
+            LOG.error("Error running pending migrations", e);
+        }
     }
 
     @Provides
@@ -175,13 +219,56 @@ public class DependencyInjectionModule extends AbstractModule {
         return properties;
     }
 
+    /**
+     * Loads environment variables from a .env file located at the project root.
+     * The .env file is expected to have KEY=VALUE pairs, one per line.
+     * Lines starting with '#' are treated as comments and ignored.
+     */
+    private static Map<String, String> loadDotEnv() {
+        Map<String, String> envMap = new HashMap<>();
+        Path envPath = Paths.get(".env");
+        if (!Files.exists(envPath)) {
+            return envMap;
+        }
+        try (BufferedReader reader = Files.newBufferedReader(envPath)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+                int equalsIndex = line.indexOf('=');
+                if (equalsIndex > 0) {
+                    String key = line.substring(0, equalsIndex).trim();
+                    String value = line.substring(equalsIndex + 1).trim();
+                    envMap.put(key, value);
+                }
+            }
+        } catch (IOException e) {
+            // Silently ignore if .env file cannot be read
+        }
+        return envMap;
+    }
+
+    /**
+     * Retrieves an environment variable value, checking System.getenv() first,
+     * then falling back to the .env file values.
+     */
+    private static String getEnvValue(String envKey) {
+        String systemEnv = System.getenv(envKey);
+        if (systemEnv != null && !systemEnv.isBlank()) {
+            return systemEnv;
+        }
+        return dotEnvVars.getOrDefault(envKey, null);
+    }
+
     private static String resolve(Properties properties, String propertyKey, String envKey, String defaultValue) {
         String rawValue = properties.getProperty(propertyKey);
         String resolvedFromPlaceholder = resolvePlaceholder(rawValue);
         if (resolvedFromPlaceholder != null && !resolvedFromPlaceholder.isBlank()) {
             return resolvedFromPlaceholder;
         }
-        String envValue = System.getenv(envKey);
+        String envValue = getEnvValue(envKey);
         if (envValue != null && !envValue.isBlank()) {
             return envValue;
         }
@@ -196,7 +283,7 @@ public class DependencyInjectionModule extends AbstractModule {
             return null;
         if (rawValue.startsWith("${") && rawValue.endsWith("}")) {
             String envKey = rawValue.substring(2, rawValue.length() - 1);
-            return System.getenv(envKey);
+            return getEnvValue(envKey);
         }
         return null;
     }

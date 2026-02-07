@@ -5,7 +5,8 @@ import lombok.Data;
 
 @Data
 public class RegistrationRequest {
-    private Long unitId;
+    private Long unitId;       // usado en registro normal
+    private Long unitNumber;   // usado en creación admin (número del depto)
     private Long roleId;
     private String firstName;
     private String lastName;

@@ -19,10 +19,10 @@ public record User(
         String status,
         String bio,
         String avatarBoxId,
-        String privacyAvatarBoxId
+        String privacyAvatarBoxId,
+        String displayName
 ) {
     public User {
-        // Validaciones mínimas para permitir el inicio de sesión incluso con datos incompletos
         if (email == null) email = "unknown@domu.app";
         if (firstName == null) firstName = "Usuario";
         if (lastName == null) lastName = "DOMU";
@@ -30,22 +30,17 @@ public record User(
 
     public User withId(Long newId) {
         return new User(
-                newId,
-                unitId,
-                roleId,
-                firstName,
-                lastName,
-                email,
-                phone,
-                birthDate,
-                passwordHash,
-                documentNumber,
-                resident,
-                createdAt,
-                status,
-                bio,
-                avatarBoxId,
-                privacyAvatarBoxId
+                newId, unitId, roleId, firstName, lastName, email, phone,
+                birthDate, passwordHash, documentNumber, resident, createdAt,
+                status, bio, avatarBoxId, privacyAvatarBoxId, displayName
         );
+    }
+
+    /** Returns displayName if set, otherwise firstName + lastName. */
+    public String publicName() {
+        if (displayName != null && !displayName.isBlank()) {
+            return displayName;
+        }
+        return firstName + " " + lastName;
     }
 }

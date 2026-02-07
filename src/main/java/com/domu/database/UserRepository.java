@@ -88,7 +88,7 @@ public class UserRepository {
     }
 
     public Optional<User> findByEmail(String email) {
-        String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status, bio, avatar_box_id, privacy_avatar_box_id FROM users WHERE email = ?";
+        String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status, bio, avatar_box_id, privacy_avatar_box_id, display_name FROM users WHERE email = ?";
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, email);
@@ -104,7 +104,7 @@ public class UserRepository {
     }
 
     public Optional<User> findById(Long id) {
-        String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status, bio, avatar_box_id, privacy_avatar_box_id FROM users WHERE id = ?";
+        String sql = "SELECT id, unit_id, role_id, first_name, last_name, birth_date, email, phone, password_hash, document_number, resident, created_at, status, bio, avatar_box_id, privacy_avatar_box_id, display_name FROM users WHERE id = ?";
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, id);
@@ -174,11 +174,22 @@ public class UserRepository {
 
     public List<ChatNeighborSummary> findNeighborsForChat(Long buildingId, Long currentUserId) {
         String sql = """
-                SELECT u.id, hu.number AS unit_number, u.privacy_avatar_box_id
+                SELECT u.id, hu.number AS unit_number,
+                       u.display_name, u.avatar_box_id, u.privacy_avatar_box_id
                 FROM users u
                 INNER JOIN user_buildings ub ON ub.user_id = u.id AND ub.building_id = ?
                 INNER JOIN housing_units hu ON hu.id = u.unit_id
                 WHERE u.id != ? AND u.status = 'ACTIVE'
+                  AND u.id NOT IN (
+                      SELECT p2.user_id FROM chat_participant p1
+                      JOIN chat_participant p2 ON p1.room_id = p2.room_id AND p2.user_id != p1.user_id
+                      WHERE p1.user_id = ?
+                  )
+                  AND u.id NOT IN (
+                      SELECT CASE WHEN cr.sender_id = ? THEN cr.receiver_id ELSE cr.sender_id END
+                      FROM chat_request cr
+                      WHERE (cr.sender_id = ? OR cr.receiver_id = ?) AND cr.status IN ('PENDING','APPROVED')
+                  )
                 ORDER BY hu.number ASC
                 """;
         List<ChatNeighborSummary> neighbors = new ArrayList<>();
@@ -186,11 +197,17 @@ public class UserRepository {
                 PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, buildingId);
             statement.setLong(2, currentUserId);
+            statement.setLong(3, currentUserId);
+            statement.setLong(4, currentUserId);
+            statement.setLong(5, currentUserId);
+            statement.setLong(6, currentUserId);
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
                     neighbors.add(new ChatNeighborSummary(
                             rs.getLong("id"),
                             rs.getString("unit_number"),
+                            rs.getString("display_name"),
+                            rs.getString("avatar_box_id"),
                             rs.getString("privacy_avatar_box_id")
                     ));
                 }
@@ -201,7 +218,19 @@ public class UserRepository {
         }
     }
 
-    public record ChatNeighborSummary(Long id, String unitNumber, String privacyAvatarBoxId) {}
+    public void updateDisplayName(Long userId, String displayName) {
+        String sql = "UPDATE users SET display_name = ? WHERE id = ?";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, displayName);
+            statement.setLong(2, userId);
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new RepositoryException("Error updating display name", e);
+        }
+    }
+
+    public record ChatNeighborSummary(Long id, String unitNumber, String displayName, String avatarUrl, String privacyAvatarBoxId) {}
 
     public List<ResidentWithUnit> findResidentsByBuilding(Long buildingId) {
         String sql = """
@@ -270,6 +299,7 @@ public class UserRepository {
                 rs.getString("status"),
                 rs.getString("bio"),
                 rs.getString("avatar_box_id"),
-                rs.getString("privacy_avatar_box_id"));
+                rs.getString("privacy_avatar_box_id"),
+                rs.getString("display_name"));
     }
 }

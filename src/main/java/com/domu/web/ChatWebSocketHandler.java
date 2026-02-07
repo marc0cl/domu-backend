@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import java.util.Map;
+import java.util.Set;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -31,6 +32,14 @@ public class ChatWebSocketHandler {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * Returns the set of user IDs currently connected via WebSocket.
+     */
+    public Set<Long> getOnlineUserIds() {
+        userSessions.entrySet().removeIf(entry -> !entry.getValue().session.isOpen());
+        return Set.copyOf(userSessions.keySet());
+    }
+
     public void handle(io.javalin.websocket.WsConfig ws) {
         ws.onConnect(ctx -> {
             String token = ctx.queryParam("token");
@@ -42,13 +51,25 @@ public class ChatWebSocketHandler {
                 Long userId = Long.parseLong(jwtProvider.verify(token).getSubject());
                 userSessions.put(userId, ctx);
                 LOGGER.info("User {} connected to chat WS", userId);
+                broadcastPresence(userId, true);
             } catch (Exception e) {
                 ctx.session.close();
             }
         });
 
         ws.onClose(ctx -> {
+            Long disconnectedUserId = null;
+            for (Map.Entry<Long, WsContext> entry : userSessions.entrySet()) {
+                if (entry.getValue().equals(ctx)) {
+                    disconnectedUserId = entry.getKey();
+                    break;
+                }
+            }
             userSessions.values().removeIf(session -> session.equals(ctx));
+            if (disconnectedUserId != null) {
+                LOGGER.info("User {} disconnected from chat WS", disconnectedUserId);
+                broadcastPresence(disconnectedUserId, false);
+            }
         });
 
         ws.onMessage(ctx -> {
@@ -98,6 +119,26 @@ public class ChatWebSocketHandler {
                     session.send(response);
                 } catch (Exception e) {
                     LOGGER.error("Error sending message via WS to user {}", id);
+                }
+            }
+        });
+    }
+
+    /**
+     * Broadcasts a PRESENCE event to all connected users when someone goes online/offline.
+     */
+    private void broadcastPresence(Long userId, boolean online) {
+        Map<String, Object> event = Map.of(
+            "type", "PRESENCE",
+            "userId", userId,
+            "online", online
+        );
+        userSessions.forEach((id, session) -> {
+            if (session.session.isOpen()) {
+                try {
+                    session.send(event);
+                } catch (Exception e) {
+                    LOGGER.debug("Error broadcasting presence to user {}", id);
                 }
             }
         });

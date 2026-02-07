@@ -158,7 +158,7 @@ public class PollService {
     }
 
     public String exportCsv(User user, Long pollId) {
-        ensureAdminOrConcierge(user);
+        ensureAuthenticated(user);
         PollRow poll = pollRepository.findById(pollId)
                 .orElseThrow(() -> new ValidationException("Votación no encontrada"));
         ensureSameBuilding(user, poll.buildingId());

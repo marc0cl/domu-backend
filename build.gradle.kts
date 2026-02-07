@@ -34,6 +34,8 @@ dependencies {
     implementation(libs.jakartaPersistence)
     implementation(libs.guice)
     implementation(libs.boxSdk)
+    implementation(libs.googleCloudStorage)
+    implementation(libs.thumbnailator)
     implementation("com.sun.mail:jakarta.mail:2.0.1")
     implementation("com.github.librepdf:openpdf:1.3.39")
     

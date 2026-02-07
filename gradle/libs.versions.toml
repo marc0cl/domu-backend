@@ -15,6 +15,8 @@ jakartaValidation = "3.0.2"
 jakartaPersistence = "3.1.0"
 guice = "7.0.0"
 boxSdk = "5.2.0"
+googleCloudStorage = "2.36.1"
+thumbnailator = "0.4.20"
 
 [libraries]
 javalin = { module = "io.javalin:javalin", version.ref = "javalin" }
@@ -36,3 +38,5 @@ jakartaValidation = { module = "jakarta.validation:jakarta.validation-api", vers
 jakartaPersistence = { module = "jakarta.persistence:jakarta.persistence-api", version.ref = "jakartaPersistence" }
 guice = { module = "com.google.inject:guice", version.ref = "guice" }
 boxSdk = { module = "com.box:box-java-sdk", version.ref = "boxSdk" }
+googleCloudStorage = { module = "com.google.cloud:google-cloud-storage", version.ref = "googleCloudStorage" }
+thumbnailator = { module = "net.coobird:thumbnailator", version.ref = "thumbnailator" }

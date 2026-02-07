@@ -28,6 +28,14 @@ public class ChatRequestService {
     }
 
     public Long createRequest(Long senderId, Long receiverId, Long buildingId, Long itemId, String message) {
+        // Prevent duplicate requests between the same two users
+        if (repository.existsBetweenUsers(senderId, receiverId)) {
+            throw new ValidationException("Ya existe una solicitud de chat con este vecino.");
+        }
+        // Also check if they already share a chat room
+        if (chatRepository.findDirectChatRoom(senderId, receiverId).isPresent()) {
+            throw new ValidationException("Ya tienes una conversación activa con este vecino.");
+        }
         return repository.insertRequest(senderId, receiverId, buildingId, itemId, message);
     }
 
@@ -38,12 +46,16 @@ public class ChatRequestService {
         repository.updateStatus(requestId, status);
 
         if ("APPROVED".equals(status)) {
-            // Create the actual chat room
-            Long roomId = chatRepository.createRoom(req.buildingId(), req.itemId());
-            chatRepository.addParticipant(roomId, req.senderId());
-            chatRepository.addParticipant(roomId, req.receiverId());
-            
-            // Optionally insert the initial message
+            // Check if a room already exists between these users
+            Long roomId = chatRepository.findDirectChatRoom(req.senderId(), req.receiverId())
+                    .orElseGet(() -> {
+                        Long newRoomId = chatRepository.createRoom(req.buildingId(), req.itemId());
+                        chatRepository.addParticipant(newRoomId, req.senderId());
+                        chatRepository.addParticipant(newRoomId, req.receiverId());
+                        return newRoomId;
+                    });
+
+            // Insert the initial message if present
             if (req.initialMessage() != null && !req.initialMessage().isBlank()) {
                 chatRepository.insertMessage(roomId, req.senderId(), req.initialMessage(), "TEXT", null);
             }

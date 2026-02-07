@@ -8,6 +8,7 @@ public class UpdateProfileRequest {
     private String lastName;
     private String phone;
     private String documentNumber;
+    private String displayName;
 }
 
 

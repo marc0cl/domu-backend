@@ -11,6 +11,7 @@ import com.domu.dto.AddCommonChargesRequest;
 import com.domu.dto.BuildingSummaryResponse;
 import com.domu.dto.CommonChargeReceiptUploadResult;
 import com.domu.dto.CommonChargeDetailResponse;
+import com.domu.dto.CommonPaymentDetailResponse;
 import com.domu.dto.CommonExpenseReceiptDocument;
 import com.domu.dto.CommonExpensePeriodDetailResponse;
 import com.domu.dto.CommonExpensePeriodResponse;
@@ -215,6 +216,20 @@ public class CommonExpenseService {
 
         CommonExpensePeriod period = repository.findPeriodById(periodId)
                 .orElseThrow(() -> new ValidationException("Período no encontrado"));
+        List<CommonPaymentDetailResponse> payments = repository.findPaymentsForUnitAndPeriod(unit.id(), periodId)
+                .stream()
+                .map(pay -> new CommonPaymentDetailResponse(
+                        pay.id(),
+                        pay.chargeId(),
+                        pay.chargeDescription(),
+                        pay.amount(),
+                        pay.paymentMethod(),
+                        pay.reference(),
+                        pay.status(),
+                        pay.issuedAt()
+                ))
+                .toList();
+
         List<CommonExpenseRevisionResponse> revisions = repository.findRevisions(periodId).stream()
                 .map(rev -> new CommonExpenseRevisionResponse(
                         rev.id(),
@@ -244,6 +259,7 @@ public class CommonExpenseService {
                 building != null ? building.city() : null,
                 unitLabel,
                 charges,
+                payments,
                 revisions
         );
     }
@@ -328,9 +344,9 @@ public class CommonExpenseService {
 
     /**
      * Simula un pago online para fines de demostración (MVP/Tesis).
-     * Marca el cargo como pagado en su totalidad.
+     * Permite pago parcial con mínimo 20% del pendiente.
      */
-    public CommonPaymentResponse payChargeSimulated(Long chargeId, User user) {
+    public CommonPaymentResponse payChargeSimulated(Long chargeId, User user, BigDecimal amount, String paymentMethod) {
         CommonExpenseRepository.ChargeBalanceRow balanceRow = repository.findChargeBalance(chargeId)
                 .orElseThrow(() -> new ValidationException("Cargo no encontrado"));
 
@@ -346,20 +362,35 @@ public class CommonExpenseService {
             throw new ValidationException("El cargo ya está pagado");
         }
 
+        // Use provided amount or default to full pending
+        BigDecimal paymentAmount = amount != null ? normalizeAmount(amount) : pending;
+
+        // Validate minimum 20%
+        BigDecimal minAmount = pending.multiply(new BigDecimal("0.20")).setScale(0, RoundingMode.CEILING);
+        if (paymentAmount.compareTo(minAmount) < 0) {
+            throw new ValidationException("El monto mínimo es " + minAmount + " (20% del pendiente)");
+        }
+        if (paymentAmount.compareTo(pending) > 0) {
+            throw new ValidationException("El monto no puede exceder el saldo pendiente");
+        }
+
+        String method = paymentMethod != null && !paymentMethod.isBlank() ? paymentMethod : "Online";
+
         CommonPayment payment = new CommonPayment(
                 null,
                 balanceRow.charge().unitId(),
                 balanceRow.charge().id(),
                 user.id(),
                 LocalDate.now(),
-                pending,
-                "SIMULATED_ONLINE",
-                "DEMO-" + System.currentTimeMillis(),
+                paymentAmount,
+                method,
+                "PAGO-" + System.currentTimeMillis(),
                 "CONFIRMED",
-                "Pago simulado (Mercado Pago Demo)"
+                "Pago " + method.toLowerCase() + " - DOMU"
         );
         CommonPayment saved = repository.insertPayment(payment);
 
+        BigDecimal newPending = pending.subtract(paymentAmount);
         CommonPaymentResponse.PaymentLine line = new CommonPaymentResponse.PaymentLine(
                 saved.amount(),
                 balanceRow.charge().description(),
@@ -367,7 +398,44 @@ public class CommonExpenseService {
                 saved.receiptText()
         );
 
-        return new CommonPaymentResponse(saved.chargeId(), BigDecimal.ZERO, List.of(line));
+        return new CommonPaymentResponse(saved.chargeId(), newPending, List.of(line));
+    }
+
+    /**
+     * Obtiene un pago por su ID para generar comprobante.
+     */
+    public CommonPayment getPaymentById(Long paymentId, User user) {
+        CommonPayment payment = repository.findPaymentById(paymentId)
+                .orElseThrow(() -> new ValidationException("Pago no encontrado"));
+
+        // Verify user owns this payment
+        if (user.unitId() == null || !Objects.equals(user.unitId(), payment.unitId())) {
+            throw new UnauthorizedResponse("No puedes acceder a pagos de otra unidad");
+        }
+
+        return payment;
+    }
+
+    /**
+     * Obtiene el balance de un cargo por su ID.
+     */
+    public CommonExpenseRepository.ChargeBalanceRow getChargeBalance(Long chargeId) {
+        return repository.findChargeBalance(chargeId).orElse(null);
+    }
+
+    /**
+     * Obtiene el contexto completo de un cargo (incluyendo período).
+     */
+    public CommonExpenseRepository.ChargeContextRow getChargeContext(Long chargeId, User user) {
+        CommonExpenseRepository.ChargeContextRow context = repository.findChargeContext(chargeId)
+                .orElseThrow(() -> new ValidationException("Cargo no encontrado"));
+
+        // Verify user owns this charge
+        if (user.unitId() == null || !Objects.equals(user.unitId(), context.charge().unitId())) {
+            throw new UnauthorizedResponse("No puedes acceder a cargos de otra unidad");
+        }
+
+        return context;
     }
 
     public CommonChargeReceiptUploadResult uploadChargeReceipt(Long chargeId,
