@@ -40,19 +40,27 @@ public class GcsStorageService {
         this.bucketName = config.gcsBucketName();
         this.saCredentials = loadServiceAccountCredentials(config.gcsKeyFilePath());
         this.storage = buildClient(saCredentials);
-        LOGGER.info("GcsStorageService initialized – bucket={}", bucketName);
+        LOGGER.info("GcsStorageService initialized – bucket={}, credentials={}", bucketName,
+                saCredentials != null ? "SA key loaded" : "FALLBACK (no SA key)");
     }
 
     private ServiceAccountCredentials loadServiceAccountCredentials(String keyFilePath) {
         try {
             if (keyFilePath != null && !keyFilePath.isBlank()) {
-                Path path = Paths.get(keyFilePath);
+                Path path = Paths.get(keyFilePath).toAbsolutePath();
+                LOGGER.info("Looking for GCS key file at: {}", path);
                 if (Files.exists(path)) {
                     GoogleCredentials creds = GoogleCredentials.fromStream(new FileInputStream(path.toFile()));
                     if (creds instanceof ServiceAccountCredentials sa) {
+                        LOGGER.info("GCS service account credentials loaded successfully");
                         return sa;
                     }
+                    LOGGER.warn("Credentials loaded but are NOT ServiceAccountCredentials – signed URLs will use fallback");
+                } else {
+                    LOGGER.error("GCS key file NOT FOUND at: {} – images will not load correctly", path);
                 }
+            } else {
+                LOGGER.warn("GCS_KEY_FILE_PATH is empty – signed URLs will use public fallback (images may break)");
             }
         } catch (IOException e) {
             LOGGER.error("Error loading GCS service account credentials", e);
