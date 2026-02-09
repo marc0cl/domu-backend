@@ -1,6 +1,7 @@
 package com.domu.service;
 
 import com.domu.config.AppConfig;
+import com.domu.service.ValidationException;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.google.cloud.storage.BlobId;
@@ -82,6 +83,9 @@ public class GcsStorageService {
      * Uploads a file to GCS and returns a signed URL for reading.
      */
     public String upload(String objectPath, byte[] content, String contentType) {
+        if (bucketName == null || bucketName.isBlank()) {
+            throw new ValidationException("Configuración de almacenamiento incompleta (GCS_BUCKET_NAME no definido)");
+        }
         BlobId blobId = BlobId.of(bucketName, objectPath);
         BlobInfo blobInfo = BlobInfo.newBuilder(blobId)
                 .setContentType(contentType)
@@ -157,13 +161,17 @@ public class GcsStorageService {
         return String.format("chat-audio/%d/%s", roomId, fileName);
     }
 
+    public String libraryDocPath(Long buildingId, String fileName) {
+        return String.format("library/%d/%s", buildingId, fileName);
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────
 
     /**
      * If the input looks like a full URL or signed URL, extract the object path.
      * Otherwise return as-is.
      */
-    private String extractObjectPath(String input) {
+    public String extractObjectPath(String input) {
         if (input == null) return "";
         // Handle signed URLs or public URLs
         String prefix = "storage.googleapis.com/" + bucketName + "/";
