@@ -157,6 +157,50 @@ public class ChatRepository {
         }
     }
 
+    public boolean isParticipant(Long roomId, Long userId) {
+        String sql = "SELECT 1 FROM chat_participant WHERE room_id = ? AND user_id = ? LIMIT 1";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, roomId);
+            stmt.setLong(2, userId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error validando participación en sala", e);
+        }
+    }
+
+    public boolean roomBelongsToBuilding(Long roomId, Long buildingId) {
+        String sql = "SELECT 1 FROM chat_room WHERE id = ? AND building_id = ? LIMIT 1";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, roomId);
+            stmt.setLong(2, buildingId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error validando edificio de sala", e);
+        }
+    }
+
+    public Optional<Long> findRoomBuildingId(Long roomId) {
+        String sql = "SELECT building_id FROM chat_room WHERE id = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, roomId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.of(rs.getLong("building_id"));
+                }
+                return Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error obteniendo edificio de sala", e);
+        }
+    }
+
     private List<ChatRoomResponse.UserSummary> findParticipantsByRoom(Long roomId) throws SQLException {
         String sql = """
                 SELECT u.id, u.first_name, u.last_name, u.display_name,
@@ -232,13 +276,13 @@ public class ChatRepository {
         }
     }
 
-    public Optional<Long> findDirectChatRoom(Long userId1, Long userId2) {
+    public Optional<Long> findDirectChatRoom(Long userId1, Long userId2, Long buildingId) {
         String sql = """
                 SELECT r.id
                 FROM chat_room r
                 JOIN chat_participant p1 ON r.id = p1.room_id
                 JOIN chat_participant p2 ON r.id = p2.room_id
-                WHERE p1.user_id = ? AND p2.user_id = ?
+                WHERE p1.user_id = ? AND p2.user_id = ? AND r.building_id = ?
                 ORDER BY r.last_message_at DESC
                 LIMIT 1
                 """;
@@ -246,6 +290,7 @@ public class ChatRepository {
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setLong(1, userId1);
             stmt.setLong(2, userId2);
+            stmt.setLong(3, buildingId);
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
                     return Optional.of(rs.getLong("id"));

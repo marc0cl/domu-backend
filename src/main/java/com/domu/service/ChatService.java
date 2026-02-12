@@ -1,6 +1,10 @@
 package com.domu.service;
 
 import com.domu.database.ChatRepository;
+import com.domu.database.BuildingRepository;
+import com.domu.database.MarketRepository;
+import com.domu.database.UserBuildingRepository;
+import com.domu.database.UserRepository;
 import com.domu.dto.ChatMessageResponse;
 import com.domu.dto.ChatRoomResponse;
 import com.domu.service.ValidationException;
@@ -14,17 +18,34 @@ import java.util.List;
 public class ChatService {
 
     private final ChatRepository repository;
+    private final MarketRepository marketRepository;
+    private final UserBuildingRepository userBuildingRepository;
+    private final UserRepository userRepository;
+    private final BuildingRepository buildingRepository;
     private final MarketplaceStorageService storageService;
     private final GcsStorageService gcsStorageService;
 
     @Inject
-    public ChatService(ChatRepository repository, MarketplaceStorageService storageService, GcsStorageService gcsStorageService) {
+    public ChatService(ChatRepository repository,
+            MarketRepository marketRepository,
+            UserBuildingRepository userBuildingRepository,
+            UserRepository userRepository,
+            BuildingRepository buildingRepository,
+            MarketplaceStorageService storageService,
+            GcsStorageService gcsStorageService) {
         this.repository = repository;
+        this.marketRepository = marketRepository;
+        this.userBuildingRepository = userBuildingRepository;
+        this.userRepository = userRepository;
+        this.buildingRepository = buildingRepository;
         this.storageService = storageService;
         this.gcsStorageService = gcsStorageService;
     }
 
     public List<ChatRoomResponse> getMyRooms(Long userId, Long buildingId) {
+        if (buildingId == null) {
+            throw new ValidationException("Debes seleccionar un edificio");
+        }
         List<ChatRoomResponse> rooms = repository.findRoomsByUser(userId, buildingId);
         return rooms.stream().map(this::resolveParticipantPhotos).toList();
     }
@@ -54,7 +75,8 @@ public class ChatService {
                 .build();
     }
 
-    public List<ChatMessageResponse> getMessages(Long roomId, int limit) {
+    public List<ChatMessageResponse> getMessages(Long roomId, Long userId, Long buildingId, int limit) {
+        ensureRoomAccess(roomId, userId, buildingId);
         return repository.findMessagesByRoom(roomId, limit);
     }
 
@@ -63,6 +85,16 @@ public class ChatService {
     }
 
     public Long startConversation(Long buildingId, Long buyerId, Long sellerId, Long itemId) {
+        if (buildingId == null) {
+            throw new ValidationException("Debes seleccionar un edificio");
+        }
+        if (!userHasAccessToBuilding(buyerId, buildingId)
+                || !userHasAccessToBuilding(sellerId, buildingId)) {
+            throw new ValidationException("Ambos usuarios deben pertenecer al edificio seleccionado");
+        }
+        if (itemId != null && !marketRepository.itemBelongsToBuilding(itemId, buildingId)) {
+            throw new ValidationException("El producto no pertenece al edificio seleccionado");
+        }
         Long roomId = repository.createRoom(buildingId, itemId);
         repository.addParticipant(roomId, buyerId);
         repository.addParticipant(roomId, sellerId);
@@ -88,9 +120,15 @@ public class ChatService {
     }
 
     public ChatMessageResponse saveMessage(Long roomId, Long senderId, String content, String type, String fileName, byte[] audioContent) {
+        if (!repository.isParticipant(roomId, senderId)) {
+            throw new ValidationException("No eres participante de esta sala");
+        }
+
         String boxFileId = null;
         if (audioContent != null && audioContent.length > 0) {
-            boxFileId = storageService.uploadChatAudio(0L, roomId, fileName, audioContent);
+            Long buildingId = repository.findRoomBuildingId(roomId)
+                    .orElseThrow(() -> new ValidationException("Sala de chat no encontrada"));
+            boxFileId = storageService.uploadChatAudio(buildingId, roomId, fileName, audioContent);
         }
         
         Long messageId = repository.insertMessage(roomId, senderId, content, type, boxFileId);
@@ -102,5 +140,32 @@ public class ChatService {
                 .filter(m -> m.id().equals(messageId))
                 .findFirst()
                 .orElseThrow(() -> new ValidationException("Error guardando mensaje"));
+    }
+
+    private void ensureRoomAccess(Long roomId, Long userId, Long buildingId) {
+        if (!repository.isParticipant(roomId, userId)) {
+            throw new ValidationException("No eres participante de esta sala");
+        }
+        if (buildingId != null && !repository.roomBelongsToBuilding(roomId, buildingId)) {
+            throw new ValidationException("La sala no pertenece al edificio seleccionado");
+        }
+    }
+
+    private boolean userHasAccessToBuilding(Long userId, Long buildingId) {
+        if (userId == null || buildingId == null) {
+            return false;
+        }
+        if (userBuildingRepository.userHasAccessToBuilding(userId, buildingId)) {
+            return true;
+        }
+        return userRepository.findById(userId)
+                .map(user -> {
+                    if (user.unitId() == null) {
+                        return false;
+                    }
+                    Long unitBuildingId = buildingRepository.findBuildingIdByUnitId(user.unitId());
+                    return buildingId.equals(unitBuildingId);
+                })
+                .orElse(false);
     }
 }

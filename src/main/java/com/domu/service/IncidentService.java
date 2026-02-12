@@ -35,6 +35,9 @@ public class IncidentService {
     public IncidentResponse create(User user, Long buildingId, IncidentRequest request) {
         ensureAuthenticated(user);
         validate(request);
+        if (buildingId == null) {
+            throw new ValidationException("Debes seleccionar un edificio");
+        }
         String status = normalizeStatus(request.getStatus());
         String priority = normalizePriority(request.getPriority());
         LocalDateTime createdAt = request.getCreatedAt() != null ? request.getCreatedAt() : LocalDateTime.now();
@@ -103,20 +106,28 @@ public class IncidentService {
         return new IncidentListResponse(reported, inProgress, closed);
     }
 
-    public IncidentResponse updateStatus(User user, Long incidentId, String newStatus) {
+    public IncidentResponse updateStatus(User user, Long incidentId, Long buildingId, String newStatus) {
         ensureAdminOrConcierge(user);
+        if (buildingId == null) {
+            throw new ValidationException("Debes seleccionar un edificio");
+        }
         String status = normalizeStatus(newStatus);
         IncidentRepository.IncidentRow existing = incidentRepository.findById(incidentId)
                 .orElseThrow(() -> new ValidationException("Incidente no encontrado"));
+        ensureIncidentInBuilding(existing, buildingId);
         IncidentRepository.IncidentRow updated = incidentRepository.updateStatus(existing.id(), status,
                 LocalDateTime.now());
         return toResponse(updated);
     }
 
-    public IncidentResponse updateAssignment(User user, Long incidentId, Long assignedToUserId) {
+    public IncidentResponse updateAssignment(User user, Long incidentId, Long buildingId, Long assignedToUserId) {
         ensureAdminOrConcierge(user);
+        if (buildingId == null) {
+            throw new ValidationException("Debes seleccionar un edificio");
+        }
         IncidentRepository.IncidentRow existing = incidentRepository.findById(incidentId)
                 .orElseThrow(() -> new ValidationException("Incidente no encontrado"));
+        ensureIncidentInBuilding(existing, buildingId);
         IncidentRepository.IncidentRow updated = incidentRepository.updateAssignment(existing.id(), assignedToUserId,
                 LocalDateTime.now());
         return toResponse(updated);
@@ -191,6 +202,12 @@ public class IncidentService {
     private void ensureAdminOrConcierge(User user) {
         if (!isAdminOrConcierge(user)) {
             throw new UnauthorizedResponse("Solo administradores o conserjes pueden actualizar incidentes");
+        }
+    }
+
+    private void ensureIncidentInBuilding(IncidentRepository.IncidentRow incident, Long buildingId) {
+        if (!Objects.equals(incident.buildingId(), buildingId)) {
+            throw new UnauthorizedResponse("No tienes acceso a este incidente");
         }
     }
 }

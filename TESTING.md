@@ -26,7 +26,7 @@ DB_URI="jdbc:mysql://127.0.0.1:3306/domu?useSSL=false&allowPublicKeyRetrieval=tr
 ## Casos probados
 - **Registro** de usuaria nueva:
   ```bash
-  curl -s -X POST http://localhost:7000/api/auth/register \
+  curl -s -X POST http://localhost:8080/api/auth/register \
     -H "Content-Type: application/json" \
     -d '{"unitId": null, "roleId": null, "firstName": "Maria", "lastName": "Lopez", "birthDate": "1992-05-10", "email": "maria.lopez@example.com", "phone": "+56 9 1111 2222", "documentNumber": "98.765.432-1", "resident": false, "password": "ClaveSegura456!"}'
   ```
@@ -34,7 +34,7 @@ DB_URI="jdbc:mysql://127.0.0.1:3306/domu?useSSL=false&allowPublicKeyRetrieval=tr
 
 - **Login** con la usuaria registrada:
   ```bash
-  curl -s -X POST http://localhost:7000/api/auth/login \
+  curl -s -X POST http://localhost:8080/api/auth/login \
     -H "Content-Type: application/json" \
     -d '{"email": "maria.lopez@example.com", "password": "ClaveSegura456!"}'
   ```

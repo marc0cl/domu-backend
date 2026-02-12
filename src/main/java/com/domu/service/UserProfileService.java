@@ -46,7 +46,7 @@ public class UserProfileService {
 
         Long activeChatRoomId = null;
         if (requesterId != null && !requesterId.equals(userId)) {
-             activeChatRoomId = chatRepository.findDirectChatRoom(requesterId, userId).orElse(null);
+             activeChatRoomId = chatRepository.findDirectChatRoom(requesterId, userId, buildingId).orElse(null);
         }
 
         // Get items with resolved URLs via MarketService

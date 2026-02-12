@@ -66,6 +66,7 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(ParcelService.class).in(Scopes.SINGLETON);
         bind(TaskService.class).in(Scopes.SINGLETON);
         bind(StaffService.class).in(Scopes.SINGLETON);
+        bind(LibraryService.class).in(Scopes.SINGLETON);
 
         bind(UserRepository.class).in(Scopes.SINGLETON);
         bind(ForumRepository.class).in(Scopes.SINGLETON);
@@ -85,6 +86,7 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(ParcelRepository.class).in(Scopes.SINGLETON);
         bind(TaskRepository.class).in(Scopes.SINGLETON);
         bind(StaffRepository.class).in(Scopes.SINGLETON);
+        bind(LibraryRepository.class).in(Scopes.SINGLETON);
 
         bind(ChatWebSocketHandler.class).in(Scopes.SINGLETON);
         bind(AuthenticationHandler.class).in(Scopes.SINGLETON);
@@ -151,7 +153,8 @@ public class DependencyInjectionModule extends AbstractModule {
             "ALTER TABLE market_item_image MODIFY COLUMN url TEXT",
             "ALTER TABLE market_item_image MODIFY COLUMN box_file_id TEXT",
             "ALTER TABLE users MODIFY COLUMN avatar_box_id TEXT",
-            "ALTER TABLE users MODIFY COLUMN privacy_avatar_box_id TEXT"
+            "ALTER TABLE users MODIFY COLUMN privacy_avatar_box_id TEXT",
+            "ALTER TABLE chat_participant ADD COLUMN hidden_at TIMESTAMP NULL DEFAULT NULL"
         };
         try (java.sql.Connection conn = ds.getConnection()) {
             for (String sql : migrations) {
