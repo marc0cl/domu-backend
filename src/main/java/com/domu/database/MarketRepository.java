@@ -60,6 +60,39 @@ public class MarketRepository {
         }
     }
 
+    public Optional<MarketItemAccessRow> findAccessRowById(Long itemId) {
+        String sql = "SELECT id, user_id, building_id FROM market_item WHERE id = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, itemId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.of(new MarketItemAccessRow(
+                            rs.getLong("id"),
+                            rs.getLong("user_id"),
+                            rs.getLong("building_id")));
+                }
+                return Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error buscando item del mercado", e);
+        }
+    }
+
+    public boolean itemBelongsToBuilding(Long itemId, Long buildingId) {
+        String sql = "SELECT 1 FROM market_item WHERE id = ? AND building_id = ? LIMIT 1";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, itemId);
+            stmt.setLong(2, buildingId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error validando edificio del item", e);
+        }
+    }
+
     public Long insertItem(Long userId, Long buildingId, Long categoryId, String title, String description, Double price, String originalPriceLink) {
         String sql = """
                 INSERT INTO market_item (user_id, building_id, category_id, title, description, price, original_price_link)
@@ -151,11 +184,12 @@ public class MarketRepository {
         }
     }
 
-    public void deleteImageById(Long imageId) {
-        String sql = "DELETE FROM market_item_image WHERE id = ?";
+    public void deleteImageById(Long imageId, Long itemId) {
+        String sql = "DELETE FROM market_item_image WHERE id = ? AND item_id = ?";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setLong(1, imageId);
+            stmt.setLong(2, itemId);
             stmt.executeUpdate();
         } catch (SQLException e) {
             throw new RepositoryException("Error eliminando imagen del mercado", e);
@@ -207,11 +241,12 @@ public class MarketRepository {
         }
     }
 
-    public String getImagePath(Long imageId) {
-        String sql = "SELECT url FROM market_item_image WHERE id = ?";
+    public String getImagePath(Long imageId, Long itemId) {
+        String sql = "SELECT url FROM market_item_image WHERE id = ? AND item_id = ?";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setLong(1, imageId);
+            stmt.setLong(2, itemId);
             try (ResultSet rs = stmt.executeQuery()) {
                 return rs.next() ? rs.getString("url") : null;
             }
@@ -271,5 +306,8 @@ public class MarketRepository {
                 .imageUrls(imageUrls)
                 .createdAt(rs.getTimestamp("created_at").toLocalDateTime())
                 .build();
+    }
+
+    public record MarketItemAccessRow(Long id, Long userId, Long buildingId) {
     }
 }

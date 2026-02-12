@@ -21,10 +21,11 @@ public class ChatRequestRepository {
     /**
      * Checks if a pending or approved request already exists between two users.
      */
-    public boolean existsBetweenUsers(Long senderId, Long receiverId) {
+    public boolean existsBetweenUsers(Long senderId, Long receiverId, Long buildingId) {
         String sql = """
                 SELECT COUNT(*) FROM chat_request
                 WHERE ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
+                  AND building_id = ?
                   AND status IN ('PENDING', 'APPROVED')
                 """;
         try (Connection conn = dataSource.getConnection();
@@ -33,6 +34,7 @@ public class ChatRequestRepository {
             stmt.setLong(2, receiverId);
             stmt.setLong(3, receiverId);
             stmt.setLong(4, senderId);
+            stmt.setLong(5, buildingId);
             try (ResultSet rs = stmt.executeQuery()) {
                 return rs.next() && rs.getInt(1) > 0;
             }
@@ -63,7 +65,7 @@ public class ChatRequestRepository {
         }
     }
 
-    public List<ChatRequestResponse> findPendingByReceiver(Long receiverId) {
+    public List<ChatRequestResponse> findPendingByReceiver(Long receiverId, Long buildingId) {
         String sql = """
                 SELECT cr.*, 
                        u_send.first_name as sender_first, u_send.last_name as sender_last, u_send.privacy_avatar_box_id as sender_photo,
@@ -77,12 +79,13 @@ public class ChatRequestRepository {
                 JOIN users u_recv ON cr.receiver_id = u_recv.id
                 LEFT JOIN housing_units hu_recv ON u_recv.unit_id = hu_recv.id
                 LEFT JOIN market_item mi ON cr.item_id = mi.id
-                WHERE cr.receiver_id = ? AND cr.status = 'PENDING'
+                WHERE cr.receiver_id = ? AND cr.status = 'PENDING' AND cr.building_id = ?
                 ORDER BY cr.created_at DESC
                 """;
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setLong(1, receiverId);
+            stmt.setLong(2, buildingId);
             try (ResultSet rs = stmt.executeQuery()) {
                 List<ChatRequestResponse> requests = new ArrayList<>();
                 while (rs.next()) {

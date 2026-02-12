@@ -3,12 +3,10 @@ package com.domu.service;
 import com.domu.database.MarketRepository;
 import com.domu.dto.MarketItemRequest;
 import com.domu.dto.MarketItemResponse;
-import com.domu.service.ValidationException;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 
 import java.util.List;
-import java.util.Map;
 
 @Singleton
 public class MarketService {
@@ -25,12 +23,18 @@ public class MarketService {
     }
 
     public List<MarketItemResponse> listItems(Long buildingId, Long categoryId, String status) {
+        if (buildingId == null) {
+            throw new ValidationException("Debes seleccionar un edificio");
+        }
         return repository.findAllByBuilding(buildingId, categoryId, status).stream()
                 .map(this::resolveUrls)
                 .toList();
     }
 
     public MarketItemResponse getItem(Long itemId, Long buildingId) {
+        if (buildingId == null) {
+            throw new ValidationException("Debes seleccionar un edificio");
+        }
         return repository.findAllByBuilding(buildingId, null, null).stream()
                 .filter(i -> i.id().equals(itemId))
                 .findFirst()
@@ -38,7 +42,11 @@ public class MarketService {
                 .orElseThrow(() -> new ValidationException("Producto no encontrado"));
     }
 
-    public void updateItem(Long itemId, Long userId, MarketItemRequest request, List<ImageContent> newImages, List<String> deletedImageIds) {
+    public void updateItem(Long itemId, Long userId, Long buildingId, MarketItemRequest request, List<ImageContent> newImages, List<String> deletedImageIds) {
+        MarketRepository.MarketItemAccessRow item = repository.findAccessRowById(itemId)
+                .orElseThrow(() -> new ValidationException("Producto no encontrado"));
+        ensureOwnerAndBuilding(item, userId, buildingId);
+
         repository.updateItem(itemId, userId, request.getCategoryId(), request.getTitle(), request.getDescription(), request.getPrice());
 
         // Delete images by ID (also removes from GCS)
@@ -46,11 +54,11 @@ public class MarketService {
             for (String idStr : deletedImageIds) {
                 try {
                     Long imageId = Long.parseLong(idStr);
-                    String objectPath = repository.getImagePath(imageId);
+                    String objectPath = repository.getImagePath(imageId, itemId);
                     if (objectPath != null && !objectPath.startsWith("http")) {
                         gcs.delete(objectPath);
                     }
-                    repository.deleteImageById(imageId);
+                    repository.deleteImageById(imageId, itemId);
                 } catch (NumberFormatException e) {
                     // Legacy: try by URL for backward compatibility
                     repository.deleteImage(itemId, idStr);
@@ -61,7 +69,7 @@ public class MarketService {
         // Upload new images
         if (newImages != null && !newImages.isEmpty()) {
             for (ImageContent img : newImages) {
-                String path = storageService.uploadMarketImage(0L, itemId, img.name(), img.content());
+                String path = storageService.uploadMarketImage(buildingId, itemId, img.name(), img.content());
                 repository.insertImage(itemId, path, path, false);
             }
         }
@@ -70,11 +78,17 @@ public class MarketService {
         repository.reassignMainImage(itemId);
     }
 
-    public void deleteItem(Long itemId, Long userId) {
+    public void deleteItem(Long itemId, Long userId, Long buildingId) {
+        MarketRepository.MarketItemAccessRow item = repository.findAccessRowById(itemId)
+                .orElseThrow(() -> new ValidationException("Producto no encontrado"));
+        ensureOwnerAndBuilding(item, userId, buildingId);
         repository.deleteItem(itemId, userId);
     }
 
     public MarketItemResponse createItem(Long userId, Long buildingId, MarketItemRequest request, List<ImageContent> images) {
+        if (buildingId == null) {
+            throw new ValidationException("Debes seleccionar un edificio");
+        }
         Long itemId = repository.insertItem(
                 userId, 
                 buildingId, 
@@ -85,9 +99,10 @@ public class MarketService {
                 request.getOriginalPriceLink()
         );
 
+        List<ImageContent> safeImages = images != null ? images : List.of();
         String mainImagePath = null;
-        for (int i = 0; i < images.size(); i++) {
-            ImageContent img = images.get(i);
+        for (int i = 0; i < safeImages.size(); i++) {
+            ImageContent img = safeImages.get(i);
             String path = storageService.uploadMarketImage(buildingId, itemId, img.name(), img.content());
             
             boolean isMain = (i == 0);
@@ -158,6 +173,18 @@ public class MarketService {
             }
         }
         return stored;
+    }
+
+    private void ensureOwnerAndBuilding(MarketRepository.MarketItemAccessRow item, Long userId, Long buildingId) {
+        if (buildingId == null) {
+            throw new ValidationException("Debes seleccionar un edificio");
+        }
+        if (!buildingId.equals(item.buildingId())) {
+            throw new ValidationException("Producto no disponible en el edificio seleccionado");
+        }
+        if (!userId.equals(item.userId())) {
+            throw new ValidationException("No tienes permisos para modificar este producto");
+        }
     }
 
     public record ImageContent(String name, byte[] content) {}
