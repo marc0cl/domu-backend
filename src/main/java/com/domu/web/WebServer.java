@@ -130,6 +130,7 @@ public final class WebServer {
     private final ParcelService parcelService;
     private final TaskService taskService;
     private final StaffService staffService;
+    private final com.domu.service.LibraryService libraryService;
     private final ChatWebSocketHandler chatWebSocketHandler;
     private final com.domu.service.HousingUnitService housingUnitService;
     private final AuthenticationHandler authenticationHandler;
@@ -166,6 +167,7 @@ public final class WebServer {
             final ParcelService parcelService,
             final TaskService taskService,
             final StaffService staffService,
+            final com.domu.service.LibraryService libraryService,
             final ChatWebSocketHandler chatWebSocketHandler,
             final com.domu.service.HousingUnitService housingUnitService,
             final AuthenticationHandler authenticationHandler,
@@ -197,6 +199,7 @@ public final class WebServer {
         this.parcelService = parcelService;
         this.taskService = taskService;
         this.staffService = staffService;
+        this.libraryService = libraryService;
         this.chatWebSocketHandler = chatWebSocketHandler;
         this.housingUnitService = housingUnitService;
         this.authenticationHandler = authenticationHandler;
@@ -434,13 +437,6 @@ public final class WebServer {
             ctx.json(Map.of("message", "Usuario confirmado exitosamente"));
         });
 
-        javalin.post("/api/auth/confirm", ctx -> {
-            ConfirmationRequest request = ctx.bodyValidator(ConfirmationRequest.class).get();
-            userService.confirmUser(request.getToken());
-            ctx.status(HttpStatus.OK);
-            ctx.json(Map.of("message", "Usuario confirmado exitosamente"));
-        });
-
         javalin.before("/api/users/*", authenticationHandler);
         javalin.before("/api/admin/*", authenticationHandler);
         javalin.before("/api/finance/*", authenticationHandler);
@@ -472,6 +468,8 @@ public final class WebServer {
         javalin.before("/api/chat/*", authenticationHandler);
         javalin.before("/api/tasks", authenticationHandler);
         javalin.before("/api/tasks/*", authenticationHandler);
+        javalin.before("/api/library", authenticationHandler);
+        javalin.before("/api/library/*", authenticationHandler);
 
         // Extraer X-Building-Id header para filtrar datos por comunidad
         // La validación de acceso se hace en cada endpoint que use este valor
@@ -1765,6 +1763,74 @@ public final class WebServer {
             }
             Long id = Long.parseLong(ctx.pathParam("id"));
             staffService.delete(user, id);
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        // ==================== LIBRARY (BIBLIOTECA) ====================
+
+        javalin.get("/api/library", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            ctx.json(libraryService.listDocuments(selectedBuildingId));
+        });
+
+        javalin.post("/api/library", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden subir documentos", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+
+            String name = ctx.formParam("name");
+            String category = ctx.formParam("category");
+            var file = ctx.uploadedFile("file");
+
+            if (name == null || name.isBlank() || category == null || category.isBlank() || file == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Nombre, categoría y archivo son obligatorios", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+
+            try {
+                byte[] content = file.content().readAllBytes();
+                ctx.status(HttpStatus.CREATED);
+                ctx.json(libraryService.uploadDocument(
+                    selectedBuildingId,
+                    user,
+                    name,
+                    category,
+                    file.filename(),
+                    content,
+                    file.contentType()
+                ));
+            } catch (Exception e) {
+                LOGGER.error("Error al procesar la subida del documento: {}", file.filename(), e);
+                throw e; // El handler de Exception se encargará de devolver el 500
+            }
+        });
+
+        javalin.delete("/api/library/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden eliminar documentos", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            Long docId = Long.parseLong(ctx.pathParam("id"));
+            libraryService.deleteDocument(selectedBuildingId, docId, user);
             ctx.status(HttpStatus.NO_CONTENT);
         });
     }

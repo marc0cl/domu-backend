@@ -1,6 +1,7 @@
 package com.domu.service;
 
 import com.domu.config.AppConfig;
+import com.domu.service.ValidationException;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.google.cloud.storage.BlobId;
@@ -40,19 +41,27 @@ public class GcsStorageService {
         this.bucketName = config.gcsBucketName();
         this.saCredentials = loadServiceAccountCredentials(config.gcsKeyFilePath());
         this.storage = buildClient(saCredentials);
-        LOGGER.info("GcsStorageService initialized – bucket={}", bucketName);
+        LOGGER.info("GcsStorageService initialized – bucket={}, credentials={}", bucketName,
+                saCredentials != null ? "SA key loaded" : "FALLBACK (no SA key)");
     }
 
     private ServiceAccountCredentials loadServiceAccountCredentials(String keyFilePath) {
         try {
             if (keyFilePath != null && !keyFilePath.isBlank()) {
-                Path path = Paths.get(keyFilePath);
+                Path path = Paths.get(keyFilePath).toAbsolutePath();
+                LOGGER.info("Looking for GCS key file at: {}", path);
                 if (Files.exists(path)) {
                     GoogleCredentials creds = GoogleCredentials.fromStream(new FileInputStream(path.toFile()));
                     if (creds instanceof ServiceAccountCredentials sa) {
+                        LOGGER.info("GCS service account credentials loaded successfully");
                         return sa;
                     }
+                    LOGGER.warn("Credentials loaded but are NOT ServiceAccountCredentials – signed URLs will use fallback");
+                } else {
+                    LOGGER.error("GCS key file NOT FOUND at: {} – images will not load correctly", path);
                 }
+            } else {
+                LOGGER.warn("GCS_KEY_FILE_PATH is empty – signed URLs will use public fallback (images may break)");
             }
         } catch (IOException e) {
             LOGGER.error("Error loading GCS service account credentials", e);
@@ -74,6 +83,9 @@ public class GcsStorageService {
      * Uploads a file to GCS and returns a signed URL for reading.
      */
     public String upload(String objectPath, byte[] content, String contentType) {
+        if (bucketName == null || bucketName.isBlank()) {
+            throw new ValidationException("Configuración de almacenamiento incompleta (GCS_BUCKET_NAME no definido)");
+        }
         BlobId blobId = BlobId.of(bucketName, objectPath);
         BlobInfo blobInfo = BlobInfo.newBuilder(blobId)
                 .setContentType(contentType)
@@ -149,13 +161,17 @@ public class GcsStorageService {
         return String.format("chat-audio/%d/%s", roomId, fileName);
     }
 
+    public String libraryDocPath(Long buildingId, String fileName) {
+        return String.format("library/%d/%s", buildingId, fileName);
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────
 
     /**
      * If the input looks like a full URL or signed URL, extract the object path.
      * Otherwise return as-is.
      */
-    private String extractObjectPath(String input) {
+    public String extractObjectPath(String input) {
         if (input == null) return "";
         // Handle signed URLs or public URLs
         String prefix = "storage.googleapis.com/" + bucketName + "/";
