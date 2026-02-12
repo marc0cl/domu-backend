@@ -46,7 +46,7 @@ Las siguientes variables controlan la configuración en tiempo de ejecución. To
 | `JWT_SECRET` | Llave privada para firmar JWT | `change-this-secret` |
 | `JWT_ISSUER` | Issuer que se incluirá en los tokens | `domu-backend` |
 | `JWT_EXPIRATION_MINUTES` | Minutos de vigencia del token | `60` |
-| `APP_SERVER_PORT` | Puerto HTTP del servidor | `7000` |
+| `APP_SERVER_PORT` | Puerto HTTP del servidor | `8080` |
 
 ## Preparar la base de datos
 
@@ -73,7 +73,7 @@ El modelo relacional completo incorpora además entidades para edificios, unidad
 ./gradlew run
 ```
 
-El servidor levanta en `http://localhost:7000` (o el puerto definido en `APP_SERVER_PORT`). Endpoints principales:
+El servidor levanta en `http://localhost:8080` (o el puerto definido en `APP_SERVER_PORT`). Endpoints principales:
 
 - `POST /api/auth/register`: registra un nuevo usuario. Ejemplo de cuerpo:
   ```json
@@ -99,7 +99,7 @@ El servidor levanta en `http://localhost:7000` (o el puerto definido en `APP_SER
 Registra un usuario de prueba (ajusta los campos según tu caso):
 
 ```bash
-curl -X POST http://localhost:7000/api/auth/register \
+curl -X POST http://localhost:8080/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "unitId": 1,
@@ -118,7 +118,7 @@ curl -X POST http://localhost:7000/api/auth/register \
 Autentica al usuario y almacena el JWT en una variable `TOKEN` (requiere `jq` instalado):
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:7000/api/auth/login \
+TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email": "juan.perez@example.com", "password": "UnaClaveMuySegura123!"}' | jq -r '.token')
 echo "Token: $TOKEN"
@@ -127,7 +127,7 @@ echo "Token: $TOKEN"
 Consulta los datos del usuario autenticado usando el token obtenido:
 
 ```bash
-curl http://localhost:7000/api/users/me \
+curl http://localhost:8080/api/users/me \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -137,7 +137,7 @@ curl http://localhost:7000/api/users/me \
 
 Registrar visita (residente: la unidad se toma del usuario):
 ```bash
-curl -X POST http://localhost:7000/api/visits \
+curl -X POST http://localhost:8080/api/visits \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -150,7 +150,7 @@ curl -X POST http://localhost:7000/api/visits \
 
 Registrar visita asignando unidad (conserje/admin, usa `unitId` explícito):
 ```bash
-curl -X POST http://localhost:7000/api/visits \
+curl -X POST http://localhost:8080/api/visits \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -164,13 +164,13 @@ curl -X POST http://localhost:7000/api/visits \
 
 Listar mis visitas (residente ve las propias; admin/conserje ve las que registró):
 ```bash
-curl http://localhost:7000/api/visits/my \
+curl http://localhost:8080/api/visits/my \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 Marcar ingreso de una visita (usa `authorizationId` devuelto al crear/listar):
 ```bash
-curl -X POST http://localhost:7000/api/visits/1/check-in \
+curl -X POST http://localhost:8080/api/visits/1/check-in \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -180,7 +180,7 @@ curl -X POST http://localhost:7000/api/visits/1/check-in \
 
 Reportar incidente (residente o admin/conserje):
 ```bash
-curl -X POST http://localhost:7000/api/incidents \
+curl -X POST http://localhost:8080/api/incidents \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -194,11 +194,11 @@ curl -X POST http://localhost:7000/api/incidents \
 Listar incidentes propios (residente) o todos (admin/conserje) con filtro de fechas opcional:
 ```bash
 # sin filtro
-curl http://localhost:7000/api/incidents/my \
+curl http://localhost:8080/api/incidents/my \
   -H "Authorization: Bearer $TOKEN"
 
 # con rango de fechas (YYYY-MM-DD)
-curl "http://localhost:7000/api/incidents/my?from=2025-01-01&to=2025-01-31" \
+curl "http://localhost:8080/api/incidents/my?from=2025-01-01&to=2025-01-31" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -208,7 +208,7 @@ curl "http://localhost:7000/api/incidents/my?from=2025-01-01&to=2025-01-31" \
 
 Crear un periodo de GGCC (admin):
 ```bash
-curl -X POST http://localhost:7000/api/finance/periods \
+curl -X POST http://localhost:8080/api/finance/periods \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -H "X-Building-Id: 7" \
@@ -221,7 +221,7 @@ curl -X POST http://localhost:7000/api/finance/periods \
 
 Agregar cargos al periodo (admin):
 ```bash
-curl -X POST http://localhost:7000/api/finance/periods/12/charges \
+curl -X POST http://localhost:8080/api/finance/periods/12/charges \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -H "X-Building-Id: 7" \
@@ -241,7 +241,7 @@ curl -X POST http://localhost:7000/api/finance/periods/12/charges \
 
 Subir boleta para un cargo (admin, archivo opcional):
 ```bash
-curl -X POST http://localhost:7000/api/finance/charges/55/receipt \
+curl -X POST http://localhost:8080/api/finance/charges/55/receipt \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Building-Id: 7" \
   -F "file=@/path/a/boleta.pdf"
@@ -249,34 +249,34 @@ curl -X POST http://localhost:7000/api/finance/charges/55/receipt \
 
 Listar periodos creados (admin):
 ```bash
-curl http://localhost:7000/api/finance/periods \
+curl http://localhost:8080/api/finance/periods \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Building-Id: 7"
 ```
 
 Listar periodos disponibles para el residente:
 ```bash
-curl http://localhost:7000/api/finance/my-periods \
+curl http://localhost:8080/api/finance/my-periods \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 Ver detalle del periodo para el residente:
 ```bash
-curl http://localhost:7000/api/finance/my-periods/12 \
+curl http://localhost:8080/api/finance/my-periods/12 \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 Descargar PDF del periodo (residente):
 ```bash
 curl -o ggcc-2025-10.pdf \
-  http://localhost:7000/api/finance/my-periods/12/pdf \
+  http://localhost:8080/api/finance/my-periods/12/pdf \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 Descargar boleta de un cargo (residente):
 ```bash
 curl -o boleta-55.pdf \
-  http://localhost:7000/api/finance/charges/55/receipt \
+  http://localhost:8080/api/finance/charges/55/receipt \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -286,14 +286,14 @@ curl -o boleta-55.pdf \
 
 Listar unidades del edificio seleccionado:
 ```bash
-curl http://localhost:7000/api/admin/housing-units \
+curl http://localhost:8080/api/admin/housing-units \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Building-Id: 7"
 ```
 
 Crear una nueva unidad:
 ```bash
-curl -X POST http://localhost:7000/api/admin/housing-units \
+curl -X POST http://localhost:8080/api/admin/housing-units \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Building-Id: 7" \
   -H "Content-Type: application/json" \
@@ -308,7 +308,7 @@ curl -X POST http://localhost:7000/api/admin/housing-units \
 
 Vincular un residente a una unidad:
 ```bash
-curl -X POST http://localhost:7000/api/admin/housing-units/15/residents \
+curl -X POST http://localhost:8080/api/admin/housing-units/15/residents \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{ "userId": 42 }'
@@ -318,13 +318,13 @@ curl -X POST http://localhost:7000/api/admin/housing-units/15/residents \
 
 Listar votaciones activas:
 ```bash
-curl "http://localhost:7000/api/polls?status=OPEN" \
+curl "http://localhost:8080/api/polls?status=OPEN" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 Crear una nueva votación (Admin):
 ```bash
-curl -X POST http://localhost:7000/api/polls \
+curl -X POST http://localhost:8080/api/polls \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -337,7 +337,7 @@ curl -X POST http://localhost:7000/api/polls \
 
 Emitir un voto:
 ```bash
-curl -X POST http://localhost:7000/api/polls/5/votes \
+curl -X POST http://localhost:8080/api/polls/5/votes \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{ "optionId": 12 }'
@@ -347,19 +347,19 @@ curl -X POST http://localhost:7000/api/polls/5/votes \
 
 Listar áreas comunes disponibles:
 ```bash
-curl http://localhost:7000/api/amenities \
+curl http://localhost:8080/api/amenities \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 Consultar disponibilidad de un área (Quincho):
 ```bash
-curl "http://localhost:7000/api/amenities/3/availability?date=2025-11-15" \
+curl "http://localhost:8080/api/amenities/3/availability?date=2025-11-15" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 Reservar un bloque horario:
 ```bash
-curl -X POST http://localhost:7000/api/amenities/3/reserve \
+curl -X POST http://localhost:8080/api/amenities/3/reserve \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -375,7 +375,7 @@ curl -X POST http://localhost:7000/api/amenities/3/reserve \
 > Este endpoint es público y permite a un administrador postular su comunidad. Requiere envío de archivo (documento de respaldo).
 
 ```bash
-curl -X POST http://localhost:7000/api/buildings/requests \
+curl -X POST http://localhost:8080/api/buildings/requests \
   -F "name=Edificio Plaza Central" \
   -F "address=Av. Libertad 123" \
   -F "commune=Santiago" \
@@ -393,7 +393,7 @@ Gestión de "agenda" de visitantes para registros rápidos.
 
 Crear contacto:
 ```bash
-curl -X POST http://localhost:7000/api/visit-contacts \
+curl -X POST http://localhost:8080/api/visit-contacts \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -406,7 +406,7 @@ curl -X POST http://localhost:7000/api/visit-contacts \
 
 Registrar visita desde contacto existente:
 ```bash
-curl -X POST http://localhost:7000/api/visit-contacts/5/register \
+curl -X POST http://localhost:8080/api/visit-contacts/5/register \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{ "validForMinutes": 180 }'
@@ -416,7 +416,7 @@ curl -X POST http://localhost:7000/api/visit-contacts/5/register \
 
 Actualizar datos personales:
 ```bash
-curl -X PUT http://localhost:7000/api/users/me/profile \
+curl -X PUT http://localhost:8080/api/users/me/profile \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -429,7 +429,7 @@ curl -X PUT http://localhost:7000/api/users/me/profile \
 
 Cambiar contraseña:
 ```bash
-curl -X POST http://localhost:7000/api/users/me/password \
+curl -X POST http://localhost:8080/api/users/me/password \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
