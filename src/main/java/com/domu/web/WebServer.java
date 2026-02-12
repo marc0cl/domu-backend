@@ -553,26 +553,6 @@ public final class WebServer {
             ctx.status(HttpStatus.NO_CONTENT);
         });
 
-        javalin.post("/api/users/me/avatar", ctx -> {
-            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            var file = ctx.uploadedFile("avatar");
-            if (file == null) {
-                throw new ValidationException("Archivo avatar es requerido");
-            }
-            userService.updateAvatar(user, file.filename(), file.content().readAllBytes());
-            ctx.status(HttpStatus.NO_CONTENT);
-        });
-
-        javalin.post("/api/users/me/privacy-avatar", ctx -> {
-            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            var file = ctx.uploadedFile("avatar");
-            if (file == null) {
-                throw new ValidationException("Archivo avatar es requerido");
-            }
-            userService.updatePrivacyAvatar(user, file.filename(), file.content().readAllBytes());
-            ctx.status(HttpStatus.NO_CONTENT);
-        });
-
         javalin.post("/api/users/me/password", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             ChangePasswordRequest request = ctx.bodyValidator(ChangePasswordRequest.class)
@@ -629,148 +609,6 @@ public final class WebServer {
             sendUserCredentialsEmail(created, rawPassword);
             ctx.status(HttpStatus.CREATED);
             ctx.json(UserMapper.toResponse(created, buildings, activeBuildingId, gcsStorageService));
-        });
-
-        // Obtener residentes del edificio seleccionado, agrupados por unidad
-        javalin.get("/api/admin/residents", ctx -> {
-            User current = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            if (current == null || current.roleId() == null ||
-                    (current.roleId() != 1L && current.roleId() != 3L)) {
-                ctx.status(HttpStatus.FORBIDDEN);
-                ctx.json(ErrorResponse.of("Solo administradores y conserjes pueden ver residentes",
-                        HttpStatus.FORBIDDEN.getCode()));
-                return;
-            }
-            Long selectedBuildingId = validateSelectedBuilding(ctx, current);
-            if (selectedBuildingId == null) {
-                ctx.status(HttpStatus.BAD_REQUEST);
-                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
-                return;
-            }
-            var residents = userRepository.findResidentsByBuilding(selectedBuildingId);
-            var response = residents.stream()
-                    .map(com.domu.dto.ResidentResponse::from)
-                    .toList();
-            ctx.json(response);
-        });
-
-        // ===== HOUSING UNITS ENDPOINTS =====
-
-        // Listar unidades del edificio seleccionado
-        javalin.get("/api/admin/housing-units", ctx -> {
-            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
-            if (selectedBuildingId == null) {
-                ctx.status(HttpStatus.BAD_REQUEST);
-                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
-                return;
-            }
-            var units = housingUnitService.listByBuilding(user.id(), selectedBuildingId);
-            ctx.json(units);
-        });
-
-        // Obtener detalle de una unidad
-        javalin.get("/api/admin/housing-units/{id}", ctx -> {
-            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            Long unitId = Long.parseLong(ctx.pathParam("id"));
-            var unit = housingUnitService.getById(user.id(), unitId);
-            ctx.json(unit);
-        });
-
-        // Crear nueva unidad
-        javalin.post("/api/admin/housing-units", ctx -> {
-            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
-            if (selectedBuildingId == null) {
-                ctx.status(HttpStatus.BAD_REQUEST);
-                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
-                return;
-            }
-            com.domu.dto.HousingUnitRequest request = ctx.bodyValidator(com.domu.dto.HousingUnitRequest.class)
-                    .check(r -> r.getNumber() != null && !r.getNumber().isBlank(), "number es requerido")
-                    .check(r -> r.getTower() != null && !r.getTower().isBlank(), "tower es requerida")
-                    .check(r -> r.getFloor() != null && !r.getFloor().isBlank(), "floor es requerido")
-                    .get();
-            var created = housingUnitService.create(user.id(), selectedBuildingId, request);
-            ctx.status(HttpStatus.CREATED);
-            ctx.json(created);
-        });
-
-        // Actualizar unidad existente
-        javalin.put("/api/admin/housing-units/{id}", ctx -> {
-            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            Long unitId = Long.parseLong(ctx.pathParam("id"));
-            com.domu.dto.HousingUnitRequest request = ctx.bodyValidator(com.domu.dto.HousingUnitRequest.class)
-                    .check(r -> r.getNumber() != null && !r.getNumber().isBlank(), "number es requerido")
-                    .check(r -> r.getTower() != null && !r.getTower().isBlank(), "tower es requerida")
-                    .check(r -> r.getFloor() != null && !r.getFloor().isBlank(), "floor es requerido")
-                    .get();
-            var updated = housingUnitService.update(user.id(), unitId, request);
-            ctx.json(updated);
-        });
-
-        // Eliminar unidad (soft delete)
-        javalin.delete("/api/admin/housing-units/{id}", ctx -> {
-            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            Long unitId = Long.parseLong(ctx.pathParam("id"));
-            housingUnitService.delete(user.id(), unitId);
-            ctx.status(HttpStatus.NO_CONTENT);
-        });
-
-        // Vincular residente a unidad
-        javalin.post("/api/admin/housing-units/{id}/residents", ctx -> {
-            try {
-                User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-                String unitIdParam = ctx.pathParam("id");
-                Long unitId;
-                try {
-                    unitId = Long.parseLong(unitIdParam);
-                } catch (NumberFormatException e) {
-                    LOGGER.error("ID de unidad inválido: {}", unitIdParam);
-                    ctx.status(HttpStatus.BAD_REQUEST);
-                    ctx.json(ErrorResponse.of("ID de unidad inválido: " + unitIdParam,
-                            HttpStatus.BAD_REQUEST.getCode()));
-                    return;
-                }
-
-                com.domu.dto.LinkResidentToUnitRequest request = ctx
-                        .bodyValidator(com.domu.dto.LinkResidentToUnitRequest.class)
-                        .check(r -> r.getUserId() != null, "userId es requerido")
-                        .get();
-
-                LOGGER.info("Vinculando residente {} a unidad {}", request.getUserId(), unitId);
-                housingUnitService.linkResident(user.id(), request.getUserId(), unitId);
-                LOGGER.info("Residente {} vinculado exitosamente a unidad {}", request.getUserId(), unitId);
-                ctx.status(HttpStatus.NO_CONTENT);
-            } catch (com.domu.service.ValidationException e) {
-                LOGGER.error("Error validando vinculación de residente", e);
-                ctx.status(HttpStatus.BAD_REQUEST);
-                ctx.json(ErrorResponse.of(e.getMessage(), HttpStatus.BAD_REQUEST.getCode()));
-            } catch (Exception e) {
-                LOGGER.error("Error vinculando residente a unidad", e);
-                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
-                ctx.json(ErrorResponse.of("Error al vincular residente: " + e.getMessage(),
-                        HttpStatus.INTERNAL_SERVER_ERROR.getCode()));
-            }
-        });
-
-        // Desvincular residente de unidad
-        javalin.delete("/api/admin/housing-units/{id}/residents/{userId}", ctx -> {
-            try {
-                User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-                Long residentUserId = Long.parseLong(ctx.pathParam("userId"));
-                housingUnitService.unlinkResident(user.id(), residentUserId);
-                ctx.status(HttpStatus.NO_CONTENT);
-            } catch (com.domu.service.ValidationException e) {
-                LOGGER.error("Error validando desvinculación de residente", e);
-                ctx.status(HttpStatus.BAD_REQUEST);
-                ctx.json(ErrorResponse.of(e.getMessage(), HttpStatus.BAD_REQUEST.getCode()));
-            } catch (Exception e) {
-                LOGGER.error("Error desvinculando residente de unidad", e);
-                ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
-                ctx.json(ErrorResponse.of("Error al desvincular residente: " + e.getMessage(),
-                        HttpStatus.INTERNAL_SERVER_ERROR.getCode()));
-            }
         });
 
         // Obtener residentes del edificio seleccionado, agrupados por unidad
@@ -1204,7 +1042,7 @@ public final class WebServer {
         javalin.post("/api/incidents", ctx -> {
             IncidentRequest request = validateIncident(ctx.bodyValidator(IncidentRequest.class));
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
             ctx.status(HttpStatus.CREATED);
             ctx.json(incidentService.create(user, selectedBuildingId, request));
         });
@@ -1215,14 +1053,16 @@ public final class WebServer {
                     .check(req -> req.getStatus() != null && !req.getStatus().isBlank(), "status es obligatorio")
                     .get();
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            ctx.json(incidentService.updateStatus(user, incidentId, request.getStatus()));
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
+            ctx.json(incidentService.updateStatus(user, incidentId, selectedBuildingId, request.getStatus()));
         });
 
         javalin.patch("/api/incidents/{incidentId}/assign", ctx -> {
             Long incidentId = Long.parseLong(ctx.pathParam("incidentId"));
             IncidentAssignmentRequest request = ctx.bodyValidator(IncidentAssignmentRequest.class).get();
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            ctx.json(incidentService.updateAssignment(user, incidentId, request.getAssignedToUserId()));
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
+            ctx.json(incidentService.updateAssignment(user, incidentId, selectedBuildingId, request.getAssignedToUserId()));
         });
 
         // ==================== PARCELS (ENCOMIENDAS) ====================
@@ -1417,7 +1257,7 @@ public final class WebServer {
 
         javalin.get("/api/market/items", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
             Long categoryId = ctx.queryParam("categoryId") != null ? Long.parseLong(ctx.queryParam("categoryId"))
                     : null;
             String status = ctx.queryParam("status");
@@ -1426,7 +1266,7 @@ public final class WebServer {
 
         javalin.get("/api/market/items/{id}", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
             Long itemId = Long.parseLong(ctx.pathParam("id"));
             ctx.json(marketService.getItem(itemId, selectedBuildingId));
         });
@@ -1434,6 +1274,7 @@ public final class WebServer {
         javalin.put("/api/market/items/{id}", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             Long itemId = Long.parseLong(ctx.pathParam("id"));
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
 
             MarketItemRequest request = new MarketItemRequest();
             request.setTitle(ctx.formParam("title"));
@@ -1456,20 +1297,21 @@ public final class WebServer {
                     })
                     : null;
 
-            marketService.updateItem(itemId, user.id(), request, imageList, deletedList);
+            marketService.updateItem(itemId, user.id(), selectedBuildingId, request, imageList, deletedList);
             ctx.status(HttpStatus.NO_CONTENT);
         });
 
         javalin.delete("/api/market/items/{id}", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             Long itemId = Long.parseLong(ctx.pathParam("id"));
-            marketService.deleteItem(itemId, user.id());
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
+            marketService.deleteItem(itemId, user.id(), selectedBuildingId);
             ctx.status(HttpStatus.NO_CONTENT);
         });
 
         javalin.post("/api/market/items", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
 
             MarketItemRequest request = new MarketItemRequest();
             request.setTitle(ctx.formParam("title"));
@@ -1495,7 +1337,7 @@ public final class WebServer {
 
         javalin.get("/api/chat/rooms", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
             ctx.json(chatService.getMyRooms(user.id(), selectedBuildingId));
         });
 
@@ -1504,7 +1346,7 @@ public final class WebServer {
             if (user == null) {
                 throw new UnauthorizedResponse();
             }
-            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
             Long itemId = ctx.queryParam("itemId") != null ? Long.parseLong(ctx.queryParam("itemId")) : null;
             Long sellerId = Long.parseLong(ctx.queryParam("sellerId"));
 
@@ -1514,8 +1356,10 @@ public final class WebServer {
         });
 
         javalin.get("/api/chat/rooms/{roomId}/messages", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
             Long roomId = Long.parseLong(ctx.pathParam("roomId"));
-            ctx.json(chatService.getMessages(roomId, 50));
+            ctx.json(chatService.getMessages(roomId, user.id(), selectedBuildingId, 50));
         });
 
         javalin.delete("/api/chat/rooms/{roomId}", ctx -> {
@@ -1537,7 +1381,7 @@ public final class WebServer {
             if (user == null) {
                 throw new UnauthorizedResponse();
             }
-            Long selectedBuildingId = ctx.attribute("selectedBuildingId");
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
             var neighbors = userRepository.findNeighborsForChat(selectedBuildingId, user.id());
             var resolved = neighbors.stream().map(n -> new com.domu.database.UserRepository.ChatNeighborSummary(
                     n.id(),
@@ -1557,13 +1401,14 @@ public final class WebServer {
                 throw new UnauthorizedResponse();
             }
             Long targetUserId = Long.parseLong(ctx.pathParam("id"));
-            Long buildingId = validateSelectedBuilding(ctx, user);
+            Long buildingId = requireSelectedBuilding(ctx, user);
             ctx.json(userProfileService.getProfile(targetUserId, buildingId, user.id()));
         });
 
         javalin.get("/api/chat/requests/me", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            ctx.json(chatRequestService.getPendingRequests(user.id()));
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
+            ctx.json(chatRequestService.getPendingRequests(user.id(), selectedBuildingId));
         });
 
         javalin.post("/api/chat/requests", ctx -> {
@@ -1571,7 +1416,7 @@ public final class WebServer {
             if (user == null) {
                 throw new UnauthorizedResponse();
             }
-            Long buildingId = validateSelectedBuilding(ctx, user);
+            Long buildingId = requireSelectedBuilding(ctx, user);
 
             Map<String, Object> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, Object>>() {
             });
@@ -1585,10 +1430,12 @@ public final class WebServer {
         });
 
         javalin.put("/api/chat/requests/{id}/status", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
             Long requestId = Long.parseLong(ctx.pathParam("id"));
             Map<String, String> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, String>>() {
             });
-            chatRequestService.updateRequestStatus(requestId, body.get("status"));
+            chatRequestService.updateRequestStatus(requestId, body.get("status"), user.id(), selectedBuildingId);
             ctx.status(HttpStatus.NO_CONTENT);
         });
 
@@ -1637,28 +1484,51 @@ public final class WebServer {
 
         javalin.get("/api/tasks", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
-            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
             ctx.json(taskService.listByBuilding(user, selectedBuildingId));
         });
 
         javalin.post("/api/tasks", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
             TaskRequest request = ctx.bodyValidator(TaskRequest.class).get();
+            TaskRequest normalized = new TaskRequest(
+                    selectedBuildingId,
+                    request.title(),
+                    request.description(),
+                    request.assigneeId(),
+                    request.assigneeIds(),
+                    request.status(),
+                    request.priority(),
+                    request.dueDate(),
+                    request.completedAt());
             ctx.status(HttpStatus.CREATED);
-            ctx.json(taskService.create(user, request));
+            ctx.json(taskService.create(user, selectedBuildingId, normalized));
         });
 
         javalin.put("/api/tasks/{id}", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
             Long id = Long.parseLong(ctx.pathParam("id"));
             TaskRequest request = ctx.bodyValidator(TaskRequest.class).get();
-            ctx.json(taskService.update(user, id, request));
+            TaskRequest normalized = new TaskRequest(
+                    selectedBuildingId,
+                    request.title(),
+                    request.description(),
+                    request.assigneeId(),
+                    request.assigneeIds(),
+                    request.status(),
+                    request.priority(),
+                    request.dueDate(),
+                    request.completedAt());
+            ctx.json(taskService.update(user, selectedBuildingId, id, normalized));
         });
 
         javalin.delete("/api/tasks/{id}", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
             Long id = Long.parseLong(ctx.pathParam("id"));
-            taskService.delete(user, id);
+            taskService.delete(user, selectedBuildingId, id);
             ctx.status(HttpStatus.NO_CONTENT);
         });
 

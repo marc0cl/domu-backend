@@ -29,7 +29,7 @@ public record AppConfig(
         String approvalsRecipient
 ) {
 
-    public static final Integer DEFAULT_PORT = 7000;
+    public static final Integer DEFAULT_PORT = 8080;
 
     public static class CustomJsonMapper implements JsonMapper {
         private final ObjectMapper objectMapper;
