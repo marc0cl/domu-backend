@@ -6,6 +6,9 @@ import com.domu.dto.StaffRequest;
 import com.google.inject.Inject;
 
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.Optional;
 
 public class StaffService {
 
@@ -77,5 +80,76 @@ public class StaffService {
     public StaffRepository.StaffResponse findById(User user, Long id) {
         return repository.findById(id)
             .orElseThrow(() -> new RuntimeException("Personal no encontrado: " + id));
+    }
+
+    public Optional<StaffRepository.StaffResponse> findForUser(User user, Long buildingId) {
+        if (user == null || buildingId == null) {
+            return Optional.empty();
+        }
+
+        String normalizedUserDocument = normalizeDocument(user.documentNumber());
+        if (normalizedUserDocument != null) {
+            Optional<StaffRepository.StaffResponse> byRut = repository.findByRut(user.documentNumber().trim());
+            if (byRut.isPresent() && Objects.equals(byRut.get().buildingId(), buildingId)) {
+                return byRut;
+            }
+        }
+
+        String normalizedUserEmail = normalizeEmail(user.email());
+        if (user.email() != null && !user.email().isBlank()) {
+            Optional<StaffRepository.StaffResponse> byEmail = repository.findByEmail(user.email().trim().toLowerCase(Locale.ROOT));
+            if (byEmail.isPresent() && Objects.equals(byEmail.get().buildingId(), buildingId)) {
+                return byEmail;
+            }
+        }
+
+        String normalizedFirstName = normalizeText(user.firstName());
+        String normalizedLastName = normalizeText(user.lastName());
+
+        return repository.findByBuilding(buildingId).stream()
+            .filter(staff -> {
+                String staffDocument = normalizeDocument(staff.rut());
+                if (normalizedUserDocument != null && normalizedUserDocument.equals(staffDocument)) {
+                    return true;
+                }
+
+                String staffEmail = normalizeEmail(staff.email());
+                if (normalizedUserEmail != null && normalizedUserEmail.equals(staffEmail)) {
+                    return true;
+                }
+
+                String staffFirstName = normalizeText(staff.firstName());
+                String staffLastName = normalizeText(staff.lastName());
+                return normalizedFirstName != null
+                    && normalizedLastName != null
+                    && normalizedFirstName.equals(staffFirstName)
+                    && normalizedLastName.equals(staffLastName);
+            })
+            .findFirst();
+    }
+
+    private String normalizeDocument(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.replace(".", "")
+            .replace("-", "")
+            .replace(" ", "")
+            .trim()
+            .toUpperCase(Locale.ROOT);
+    }
+
+    private String normalizeEmail(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim().toLowerCase(Locale.ROOT);
     }
 }

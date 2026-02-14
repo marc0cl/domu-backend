@@ -23,7 +23,8 @@ import com.google.inject.Inject;
 import io.javalin.http.UnauthorizedResponse;
 
 import java.math.BigDecimal;
-import java.time.DayOfWeek;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
@@ -32,6 +33,7 @@ import java.util.List;
 import java.util.Objects;
 
 public class AmenityService {
+    private static final int MAX_IMAGE_URL_LENGTH = 5000;
 
     private final AmenityRepository amenityRepository;
     private final BuildingRepository buildingRepository;
@@ -53,6 +55,7 @@ public class AmenityService {
         ensureAdminOrConcierge(user);
         validateAmenityRequest(request);
         Long buildingId = resolveBuildingId(user, request.getBuildingId());
+        String normalizedImageUrl = normalizeImageUrl(request.getImageUrl());
 
         AmenityRow saved = amenityRepository.insertAmenity(new AmenityRow(
                 null,
@@ -62,7 +65,7 @@ public class AmenityService {
                 request.getMaxCapacity(),
                 request.getCostPerSlot() != null ? request.getCostPerSlot() : BigDecimal.ZERO,
                 request.getRules(),
-                request.getImageUrl(),
+                normalizedImageUrl,
                 request.getStatus() != null ? request.getStatus() : "ACTIVE",
                 null,
                 null));
@@ -76,6 +79,7 @@ public class AmenityService {
                 .orElseThrow(() -> new ValidationException("Área común no encontrada"));
         ensureSameBuilding(user, existing.buildingId());
         validateAmenityRequest(request);
+        String normalizedImageUrl = normalizeImageUrl(request.getImageUrl());
 
         AmenityRow updated = amenityRepository.updateAmenity(new AmenityRow(
                 amenityId,
@@ -85,7 +89,7 @@ public class AmenityService {
                 request.getMaxCapacity(),
                 request.getCostPerSlot() != null ? request.getCostPerSlot() : BigDecimal.ZERO,
                 request.getRules(),
-                request.getImageUrl(),
+                normalizedImageUrl,
                 request.getStatus() != null ? request.getStatus() : existing.status(),
                 existing.createdAt(),
                 null));
@@ -377,6 +381,33 @@ public class AmenityService {
         if (request.getName() == null || request.getName().isBlank()) {
             throw new ValidationException("El nombre es obligatorio");
         }
+    }
+
+    private String normalizeImageUrl(String rawImageUrl) {
+        if (rawImageUrl == null) {
+            return null;
+        }
+        String imageUrl = rawImageUrl.trim();
+        if (imageUrl.isEmpty()) {
+            return null;
+        }
+        if (imageUrl.length() > MAX_IMAGE_URL_LENGTH) {
+            throw new ValidationException("imageUrl supera el largo maximo permitido (5000)");
+        }
+        if (imageUrl.regionMatches(true, 0, "data:", 0, 5)) {
+            throw new ValidationException("imageUrl debe ser una URL http(s), no un data URI");
+        }
+
+        try {
+            URI uri = new URI(imageUrl);
+            String scheme = uri.getScheme();
+            if (scheme == null || (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme))) {
+                throw new ValidationException("imageUrl debe comenzar con http:// o https://");
+            }
+        } catch (URISyntaxException e) {
+            throw new ValidationException("imageUrl debe ser una URL valida");
+        }
+        return imageUrl;
     }
 
     private void ensureAuthenticated(User user) {

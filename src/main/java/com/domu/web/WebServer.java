@@ -468,6 +468,8 @@ public final class WebServer {
         javalin.before("/api/chat/*", authenticationHandler);
         javalin.before("/api/tasks", authenticationHandler);
         javalin.before("/api/tasks/*", authenticationHandler);
+        javalin.before("/api/staff", authenticationHandler);
+        javalin.before("/api/staff/*", authenticationHandler);
         javalin.before("/api/library", authenticationHandler);
         javalin.before("/api/library/*", authenticationHandler);
 
@@ -1533,6 +1535,25 @@ public final class WebServer {
         });
 
         // ==================== STAFF ====================
+
+        javalin.get("/api/staff/me", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+
+            var staff = staffService.findForUser(user, selectedBuildingId);
+            if (staff.isEmpty()) {
+                ctx.status(HttpStatus.NOT_FOUND);
+                ctx.json(ErrorResponse.of("No se encontro perfil de personal para este usuario", HttpStatus.NOT_FOUND.getCode()));
+                return;
+            }
+
+            ctx.json(staff.get());
+        });
 
         javalin.get("/api/admin/staff", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);

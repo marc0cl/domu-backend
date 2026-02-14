@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS amenities (
     max_capacity INT,
     cost_per_slot DECIMAL(10, 2) DEFAULT 0.00,
     rules TEXT,
-    image_url VARCHAR(500),
+    image_url TEXT,
     status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

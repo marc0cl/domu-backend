@@ -152,6 +152,7 @@ public class DependencyInjectionModule extends AbstractModule {
             "ALTER TABLE market_item MODIFY COLUMN main_image_url TEXT",
             "ALTER TABLE market_item_image MODIFY COLUMN url TEXT",
             "ALTER TABLE market_item_image MODIFY COLUMN box_file_id TEXT",
+            "ALTER TABLE amenities MODIFY COLUMN image_url TEXT",
             "ALTER TABLE users MODIFY COLUMN avatar_box_id TEXT",
             "ALTER TABLE users MODIFY COLUMN privacy_avatar_box_id TEXT",
             "ALTER TABLE chat_participant ADD COLUMN hidden_at TIMESTAMP NULL DEFAULT NULL"
