@@ -74,6 +74,7 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(BuildingRepository.class).in(Scopes.SINGLETON);
         bind(UserBuildingRepository.class).in(Scopes.SINGLETON);
         bind(UserConfirmationRepository.class).in(Scopes.SINGLETON);
+        bind(PasswordResetRepository.class).in(Scopes.SINGLETON);
         bind(VisitRepository.class).in(Scopes.SINGLETON);
         bind(VisitContactRepository.class).in(Scopes.SINGLETON);
         bind(IncidentRepository.class).in(Scopes.SINGLETON);
@@ -148,6 +149,8 @@ public class DependencyInjectionModule extends AbstractModule {
 
     private static void runPendingMigrations(HikariDataSource ds) {
         String[] migrations = {
+            "CREATE TABLE IF NOT EXISTS password_reset_tokens (id BIGINT AUTO_INCREMENT PRIMARY KEY, user_id BIGINT NOT NULL, token VARCHAR(100) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, used_at DATETIME NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, CONSTRAINT fk_password_reset_user FOREIGN KEY (user_id) REFERENCES users(id))",
+            "CREATE INDEX idx_password_reset_tokens_token ON password_reset_tokens (token)",
             "ALTER TABLE users ADD COLUMN display_name VARCHAR(100) NULL",
             "ALTER TABLE market_item MODIFY COLUMN main_image_url TEXT",
             "ALTER TABLE market_item_image MODIFY COLUMN url TEXT",
@@ -163,9 +166,9 @@ public class DependencyInjectionModule extends AbstractModule {
                     stmt.execute(sql);
                     LOG.info("Migration OK: {}", sql);
                 } catch (java.sql.SQLException e) {
-                    // Error code 1060 = Duplicate column name — safe to ignore
-                    if (e.getErrorCode() == 1060) {
-                        LOG.info("Column already exists, skipping: {}", sql);
+                    // Error code 1060 = Duplicate column name, 1061 = Duplicate key name — safe to ignore
+                    if (e.getErrorCode() == 1060 || e.getErrorCode() == 1061) {
+                        LOG.info("Migration already applied, skipping: {}", sql);
                     } else {
                         LOG.warn("Migration warning: {} — {}", sql, e.getMessage());
                     }

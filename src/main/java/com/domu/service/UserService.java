@@ -3,6 +3,7 @@ package com.domu.service;
 import com.domu.database.UserRepository;
 import com.domu.database.UserBuildingRepository;
 import com.domu.database.UserConfirmationRepository;
+import com.domu.database.PasswordResetRepository;
 import com.domu.database.StaffRepository;
 import com.domu.domain.core.User;
 import com.domu.security.PasswordHasher;
@@ -23,6 +24,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final UserBuildingRepository userBuildingRepository;
     private final UserConfirmationRepository userConfirmationRepository;
+    private final PasswordResetRepository passwordResetRepository;
     private final StaffRepository staffRepository;
     private final PasswordHasher passwordHasher;
     private final MarketplaceStorageService storageService;
@@ -31,6 +33,7 @@ public class UserService {
     @Inject
     public UserService(UserRepository userRepository, UserBuildingRepository userBuildingRepository,
             UserConfirmationRepository userConfirmationRepository,
+            PasswordResetRepository passwordResetRepository,
             StaffRepository staffRepository,
             PasswordHasher passwordHasher,
             MarketplaceStorageService storageService,
@@ -38,6 +41,7 @@ public class UserService {
         this.userRepository = userRepository;
         this.userBuildingRepository = userBuildingRepository;
         this.userConfirmationRepository = userConfirmationRepository;
+        this.passwordResetRepository = passwordResetRepository;
         this.staffRepository = staffRepository;
         this.passwordHasher = passwordHasher;
         this.storageService = storageService;
@@ -356,6 +360,47 @@ public class UserService {
 
     public Optional<User> findById(Long id) {
         return userRepository.findById(id);
+    }
+
+    /**
+     * Solicita recuperación de contraseña. Genera token y lo retorna.
+     * Retorna Optional vacío si el email no existe (seguridad: no revelar si el usuario existe).
+     */
+    public Optional<String> requestPasswordReset(String email) {
+        if (isBlank(email)) {
+            return Optional.empty();
+        }
+        Optional<User> userOpt = userRepository.findByEmail(email.toLowerCase());
+        if (userOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        User user = userOpt.get();
+        String token = java.util.UUID.randomUUID().toString();
+        passwordResetRepository.insert(user.id(), token, LocalDateTime.now().plusHours(1));
+        return Optional.of(token);
+    }
+
+    /**
+     * Restablece la contraseña usando el token.
+     */
+    public void resetPassword(String token, String newPassword) {
+        if (isBlank(token)) {
+            throw new ValidationException("Token de recuperación inválido");
+        }
+        if (isBlank(newPassword) || newPassword.length() < 10) {
+            throw new ValidationException("La contraseña debe tener al menos 10 caracteres");
+        }
+        PasswordResetRepository.ResetRow row = passwordResetRepository.findByToken(token)
+                .orElseThrow(() -> new ValidationException("Token de recuperación inválido"));
+        if (row.usedAt() != null) {
+            throw new ValidationException("Este enlace ya fue utilizado");
+        }
+        if (row.expiresAt().isBefore(LocalDateTime.now())) {
+            throw new ValidationException("El enlace ha expirado (validez de 1 hora)");
+        }
+        String hash = passwordHasher.hash(newPassword);
+        userRepository.updatePassword(row.userId(), hash);
+        passwordResetRepository.markAsUsed(token);
     }
 
     private void validateRegistration(

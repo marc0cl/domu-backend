@@ -8,6 +8,8 @@ import com.domu.dto.AdminInviteRegistrationRequest;
 import com.domu.dto.AuthResponse;
 import com.domu.dto.BuildingRequestResponse;
 import com.domu.dto.ConfirmationRequest;
+import com.domu.dto.ForgotPasswordRequest;
+import com.domu.dto.ResetPasswordRequest;
 import com.domu.dto.CreateBuildingRequest;
 import com.domu.dto.ErrorResponse;
 import com.domu.dto.LoginRequest;
@@ -435,6 +437,42 @@ public final class WebServer {
             userService.confirmUser(request.getToken());
             ctx.status(HttpStatus.OK);
             ctx.json(Map.of("message", "Usuario confirmado exitosamente"));
+        });
+
+        javalin.post("/api/auth/forgot-password", ctx -> {
+            ForgotPasswordRequest request = ctx.bodyValidator(ForgotPasswordRequest.class)
+                    .check(r -> r.getEmail() != null && !r.getEmail().isBlank(), "email es requerido")
+                    .get();
+            String email = request.getEmail().trim().toLowerCase();
+            userService.requestPasswordReset(email).ifPresent(token -> {
+                String frontendUrl = resolveFrontendBaseUrl();
+                String resetUrl = frontendUrl + "/recuperar-contrasena?token=" + token;
+                String subject = "Recuperar contraseña - DOMU";
+                String html = """
+                    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                        <h2 style="color: #2c3e50;">Recuperar contraseña</h2>
+                        <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en DOMU.</p>
+                        <p>Haz clic en el siguiente botón para crear una nueva contraseña (el enlace expira en 1 hora):</p>
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="%s" style="background: #1abc9c; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Restablecer contraseña</a>
+                        </div>
+                        <p style="font-size: 0.9em; color: #7f8c8d;">Si no solicitaste este cambio, ignora este correo.</p>
+                    </div>
+                    """.formatted(resetUrl);
+                emailService.sendHtml(email, subject, html);
+            });
+            ctx.status(HttpStatus.OK);
+            ctx.json(Map.of("message", "Si el correo existe, recibirás un enlace para restablecer tu contraseña"));
+        });
+
+        javalin.post("/api/auth/reset-password", ctx -> {
+            ResetPasswordRequest request = ctx.bodyValidator(ResetPasswordRequest.class)
+                    .check(r -> r.getToken() != null && !r.getToken().isBlank(), "token es requerido")
+                    .check(r -> r.getNewPassword() != null && r.getNewPassword().length() >= 10, "newPassword debe tener al menos 10 caracteres")
+                    .get();
+            userService.resetPassword(request.getToken(), request.getNewPassword());
+            ctx.status(HttpStatus.OK);
+            ctx.json(Map.of("message", "Contraseña actualizada correctamente"));
         });
 
         javalin.before("/api/users/*", authenticationHandler);
