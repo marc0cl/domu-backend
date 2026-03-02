@@ -7,6 +7,9 @@ ALTER TABLE buildings
     ADD CONSTRAINT fk_buildings_owner FOREIGN KEY (owner_user_id) REFERENCES users(id);
 ALTER TABLE buildings ADD COLUMN latitude DECIMAL(10, 7) NULL;
 ALTER TABLE buildings ADD COLUMN longitude DECIMAL(10, 7) NULL;
+ALTER TABLE buildings ADD COLUMN building_type VARCHAR(20) NULL;
+ALTER TABLE buildings ADD COLUMN house_units_count INT NULL;
+ALTER TABLE buildings ADD COLUMN apartment_units_count INT NULL;
 
 -- Solicitudes de creación de edificio
 CREATE TABLE IF NOT EXISTS building_requests (
@@ -21,8 +24,11 @@ CREATE TABLE IF NOT EXISTS building_requests (
     admin_email VARCHAR(150),
     admin_name VARCHAR(150),
     admin_document VARCHAR(100),
+    building_type VARCHAR(20),
     floors INT,
     units_count INT,
+    house_units_count INT,
+    apartment_units_count INT,
     latitude DECIMAL(10, 7),
     longitude DECIMAL(10, 7),
     proof_text MEDIUMTEXT,

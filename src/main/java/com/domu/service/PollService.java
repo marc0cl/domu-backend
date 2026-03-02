@@ -39,10 +39,10 @@ public class PollService {
         this.userBuildingRepository = userBuildingRepository;
     }
 
-    public PollResponse create(User user, CreatePollRequest request) {
+    public PollResponse create(User user, Long selectedBuildingId, CreatePollRequest request) {
         ensureAdminOrConcierge(user);
         validateCreateRequest(request);
-        Long buildingId = resolveBuildingId(user, request.getBuildingId());
+        Long buildingId = resolveBuildingId(user, request.getBuildingId(), selectedBuildingId);
         LocalDateTime closesAt = request.getClosesAt();
         if (closesAt.isBefore(LocalDateTime.now())) {
             throw new ValidationException("La fecha de cierre debe ser futura");
@@ -68,9 +68,9 @@ public class PollService {
         return toResponse(saved, options, null);
     }
 
-    public PollListResponse list(User user, String status) {
+    public PollListResponse list(User user, Long selectedBuildingId, String status) {
         ensureAuthenticated(user);
-        Long buildingId = resolveBuildingId(user, null);
+        Long buildingId = resolveBuildingId(user, null, selectedBuildingId);
         String normalizedStatus = normalizeStatus(status);
         refreshExpiredPolls();
 
@@ -101,25 +101,25 @@ public class PollService {
         return new PollListResponse(open, closed);
     }
 
-    public PollResponse get(User user, Long pollId) {
+    public PollResponse get(User user, Long selectedBuildingId, Long pollId) {
         ensureAuthenticated(user);
         PollRow poll = pollRepository.findById(pollId)
                 .orElseThrow(() -> new ValidationException("Votación no encontrada"));
-        ensureSameBuilding(user, poll.buildingId());
+        ensureSameBuilding(user, selectedBuildingId, poll.buildingId());
         PollRow fresh = ensureFreshStatus(poll);
         List<PollOptionRow> options = pollRepository.findOptions(fresh.id());
         Optional<PollVoteRow> vote = pollRepository.findUserVote(fresh.id(), user.id());
         return toResponse(fresh, options, vote.orElse(null));
     }
 
-    public PollResponse vote(User user, Long pollId, VoteRequest request) {
+    public PollResponse vote(User user, Long selectedBuildingId, Long pollId, VoteRequest request) {
         ensureAuthenticated(user);
         if (request == null || request.getOptionId() == null) {
             throw new ValidationException("optionId es obligatorio");
         }
         PollRow poll = pollRepository.findById(pollId)
                 .orElseThrow(() -> new ValidationException("Votación no encontrada"));
-        ensureSameBuilding(user, poll.buildingId());
+        ensureSameBuilding(user, selectedBuildingId, poll.buildingId());
         PollRow current = ensureFreshStatus(poll);
 
         if (!"OPEN".equalsIgnoreCase(current.status())) {
@@ -147,21 +147,21 @@ public class PollService {
                 new PollVoteRow(null, current.id(), selected.id(), user.id(), LocalDateTime.now()));
     }
 
-    public PollResponse close(User user, Long pollId) {
+    public PollResponse close(User user, Long selectedBuildingId, Long pollId) {
         ensureAdminOrConcierge(user);
         PollRow poll = pollRepository.findById(pollId)
                 .orElseThrow(() -> new ValidationException("Votación no encontrada"));
-        ensureSameBuilding(user, poll.buildingId());
+        ensureSameBuilding(user, selectedBuildingId, poll.buildingId());
         PollRow closed = pollRepository.closePoll(poll.id(), LocalDateTime.now());
         List<PollOptionRow> options = pollRepository.findOptions(closed.id());
         return toResponse(closed, options, null);
     }
 
-    public String exportCsv(User user, Long pollId) {
+    public String exportCsv(User user, Long selectedBuildingId, Long pollId) {
         ensureAuthenticated(user);
         PollRow poll = pollRepository.findById(pollId)
                 .orElseThrow(() -> new ValidationException("Votación no encontrada"));
-        ensureSameBuilding(user, poll.buildingId());
+        ensureSameBuilding(user, selectedBuildingId, poll.buildingId());
         PollRow fresh = ensureFreshStatus(poll);
         List<PollOptionRow> options = pollRepository.findOptions(fresh.id());
 
@@ -248,8 +248,20 @@ public class PollService {
         }
     }
 
-    private Long resolveBuildingId(User user, Long requestBuildingId) {
+    private Long resolveBuildingId(User user, Long requestBuildingId, Long selectedBuildingId) {
+        if (selectedBuildingId != null) {
+            if (requestBuildingId != null && !Objects.equals(requestBuildingId, selectedBuildingId)) {
+                throw new ValidationException("buildingId no coincide con la comunidad seleccionada");
+            }
+            if (!userHasAccessToBuilding(user, selectedBuildingId)) {
+                throw new UnauthorizedResponse("No tienes acceso a la comunidad seleccionada");
+            }
+            return selectedBuildingId;
+        }
         if (requestBuildingId != null) {
+            if (!userHasAccessToBuilding(user, requestBuildingId)) {
+                throw new UnauthorizedResponse("No tienes acceso a esa comunidad");
+            }
             return requestBuildingId;
         }
         if (user != null && user.unitId() != null) {
@@ -267,11 +279,25 @@ public class PollService {
         throw new ValidationException("No se pudo determinar el edificio asociado");
     }
 
-    private void ensureSameBuilding(User user, Long buildingId) {
-        Long userBuilding = resolveBuildingId(user, null);
+    private void ensureSameBuilding(User user, Long selectedBuildingId, Long buildingId) {
+        Long userBuilding = resolveBuildingId(user, null, selectedBuildingId);
         if (!Objects.equals(userBuilding, buildingId)) {
             throw new UnauthorizedResponse("No tienes acceso a esta votación");
         }
+    }
+
+    private boolean userHasAccessToBuilding(User user, Long buildingId) {
+        if (user == null || buildingId == null) {
+            return false;
+        }
+        if (userBuildingRepository.userHasAccessToBuilding(user.id(), buildingId)) {
+            return true;
+        }
+        if (user.unitId() != null) {
+            Long unitBuildingId = buildingRepository.findBuildingIdByUnitId(user.unitId());
+            return Objects.equals(unitBuildingId, buildingId);
+        }
+        return false;
     }
 
     private String normalizeStatus(String status) {

@@ -6,5 +6,6 @@ public record AdminInviteInfoResponse(
                 String firstName,
                 String lastName,
                 String phone,
-                String documentNumber) {
+                String documentNumber,
+                boolean existingAdminAccount) {
 }

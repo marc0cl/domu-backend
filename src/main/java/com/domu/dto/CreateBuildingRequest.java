@@ -13,8 +13,11 @@ public class CreateBuildingRequest {
     private String adminEmail;
     private String adminName;
     private String adminDocument;
+    private String buildingType;
     private Integer floors;
     private Integer unitsCount;
+    private Integer houseUnitsCount;
+    private Integer apartmentUnitsCount;
     private Double latitude;
     private Double longitude;
     private String proofText;

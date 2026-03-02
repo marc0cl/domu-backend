@@ -26,8 +26,8 @@ public class BuildingRepository {
     public BuildingRequest insertRequest(BuildingRequest request) {
         String sql = """
                 INSERT INTO building_requests
-                (requested_by_user_id, name, tower_label, address, commune, city, admin_phone, admin_email, admin_name, admin_document, floors, units_count, latitude, longitude, proof_text, box_folder_id, box_file_id, box_file_name, status, approval_code, approval_code_expires_at, approval_code_used_at, approval_action, admin_invite_code, admin_invite_expires_at, admin_invite_used_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (requested_by_user_id, name, tower_label, address, commune, city, admin_phone, admin_email, admin_name, admin_document, building_type, floors, units_count, house_units_count, apartment_units_count, latitude, longitude, proof_text, box_folder_id, box_file_id, box_file_name, status, approval_code, approval_code_expires_at, approval_code_used_at, approval_action, admin_invite_code, admin_invite_expires_at, admin_invite_used_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
@@ -45,46 +45,57 @@ public class BuildingRepository {
             statement.setString(8, request.adminEmail());
             statement.setString(9, request.adminName());
             statement.setString(10, request.adminDocument());
+            statement.setString(11, request.buildingType());
             if (request.floors() != null) {
-                statement.setInt(11, request.floors());
-            } else {
-                statement.setNull(11, java.sql.Types.INTEGER);
-            }
-            if (request.unitsCount() != null) {
-                statement.setInt(12, request.unitsCount());
+                statement.setInt(12, request.floors());
             } else {
                 statement.setNull(12, java.sql.Types.INTEGER);
             }
-            if (request.latitude() != null) {
-                statement.setDouble(13, request.latitude());
+            if (request.unitsCount() != null) {
+                statement.setInt(13, request.unitsCount());
             } else {
-                statement.setNull(13, java.sql.Types.DOUBLE);
+                statement.setNull(13, java.sql.Types.INTEGER);
+            }
+            if (request.houseUnitsCount() != null) {
+                statement.setInt(14, request.houseUnitsCount());
+            } else {
+                statement.setNull(14, java.sql.Types.INTEGER);
+            }
+            if (request.apartmentUnitsCount() != null) {
+                statement.setInt(15, request.apartmentUnitsCount());
+            } else {
+                statement.setNull(15, java.sql.Types.INTEGER);
+            }
+            if (request.latitude() != null) {
+                statement.setDouble(16, request.latitude());
+            } else {
+                statement.setNull(16, java.sql.Types.DOUBLE);
             }
             if (request.longitude() != null) {
-                statement.setDouble(14, request.longitude());
+                statement.setDouble(17, request.longitude());
             } else {
-                statement.setNull(14, java.sql.Types.DOUBLE);
+                statement.setNull(17, java.sql.Types.DOUBLE);
             }
-            statement.setString(15, request.proofText());
-            statement.setString(16, request.boxFolderId());
-            statement.setString(17, request.boxFileId());
-            statement.setString(18, request.boxFileName());
-            statement.setString(19, request.status());
-            statement.setString(20, request.approvalCode());
+            statement.setString(18, request.proofText());
+            statement.setString(19, request.boxFolderId());
+            statement.setString(20, request.boxFileId());
+            statement.setString(21, request.boxFileName());
+            statement.setString(22, request.status());
+            statement.setString(23, request.approvalCode());
             if (request.approvalCodeExpiresAt() != null) {
-                statement.setTimestamp(21, Timestamp.valueOf(request.approvalCodeExpiresAt()));
+                statement.setTimestamp(24, Timestamp.valueOf(request.approvalCodeExpiresAt()));
             } else {
-                statement.setNull(21, java.sql.Types.TIMESTAMP);
+                statement.setNull(24, java.sql.Types.TIMESTAMP);
             }
-            statement.setNull(22, java.sql.Types.TIMESTAMP);
-            statement.setNull(23, java.sql.Types.VARCHAR);
-            statement.setString(24, request.adminInviteCode());
+            statement.setNull(25, java.sql.Types.TIMESTAMP);
+            statement.setNull(26, java.sql.Types.VARCHAR);
+            statement.setString(27, request.adminInviteCode());
             if (request.adminInviteExpiresAt() != null) {
-                statement.setTimestamp(25, Timestamp.valueOf(request.adminInviteExpiresAt()));
+                statement.setTimestamp(28, Timestamp.valueOf(request.adminInviteExpiresAt()));
             } else {
-                statement.setNull(25, java.sql.Types.TIMESTAMP);
+                statement.setNull(28, java.sql.Types.TIMESTAMP);
             }
-            statement.setNull(26, java.sql.Types.TIMESTAMP);
+            statement.setNull(29, java.sql.Types.TIMESTAMP);
             statement.executeUpdate();
             try (ResultSet keys = statement.getGeneratedKeys()) {
                 if (keys.next()) {
@@ -101,7 +112,7 @@ public class BuildingRepository {
     public Optional<BuildingRequest> findRequest(Long requestId) {
         String sql = """
                 SELECT id, requested_by_user_id, name, tower_label, address, commune, city, admin_phone, admin_email,
-                       admin_name, admin_document, floors, units_count, latitude, longitude, proof_text, box_folder_id, box_file_id, box_file_name, status,
+                       admin_name, admin_document, building_type, floors, units_count, house_units_count, apartment_units_count, latitude, longitude, proof_text, box_folder_id, box_file_id, box_file_name, status,
                        created_at, reviewed_by_user_id, reviewed_at, review_notes, building_id,
                        approval_code, approval_code_expires_at, approval_code_used_at, approval_action,
                        admin_invite_code, admin_invite_expires_at, admin_invite_used_at
@@ -125,7 +136,7 @@ public class BuildingRepository {
     public Optional<BuildingRequest> findRequestByApprovalCode(String approvalCode) {
         String sql = """
                 SELECT id, requested_by_user_id, name, tower_label, address, commune, city, admin_phone, admin_email,
-                       admin_name, admin_document, floors, units_count, latitude, longitude, proof_text, box_folder_id, box_file_id, box_file_name, status,
+                       admin_name, admin_document, building_type, floors, units_count, house_units_count, apartment_units_count, latitude, longitude, proof_text, box_folder_id, box_file_id, box_file_name, status,
                        created_at, reviewed_by_user_id, reviewed_at, review_notes, building_id,
                        approval_code, approval_code_expires_at, approval_code_used_at, approval_action,
                        admin_invite_code, admin_invite_expires_at, admin_invite_used_at
@@ -149,7 +160,7 @@ public class BuildingRepository {
     public Optional<BuildingRequest> findRequestByAdminInviteCode(String inviteCode) {
         String sql = """
                 SELECT id, requested_by_user_id, name, tower_label, address, commune, city, admin_phone, admin_email,
-                       admin_name, admin_document, floors, units_count, latitude, longitude, proof_text, box_folder_id, box_file_id, box_file_name, status,
+                       admin_name, admin_document, building_type, floors, units_count, house_units_count, apartment_units_count, latitude, longitude, proof_text, box_folder_id, box_file_id, box_file_name, status,
                        created_at, reviewed_by_user_id, reviewed_at, review_notes, building_id,
                        approval_code, approval_code_expires_at, approval_code_used_at, approval_action,
                        admin_invite_code, admin_invite_expires_at, admin_invite_used_at
@@ -215,53 +226,108 @@ public class BuildingRepository {
 
     public Long insertBuildingFromRequest(BuildingRequest request, Long ownerUserId) {
         String sql = """
-                INSERT INTO buildings (name, address, commune, city, admin_phone, admin_email, floors, units_count, tower_label, owner_user_id, latitude, longitude, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
+                INSERT INTO buildings (name, address, commune, city, admin_phone, admin_email, building_type, floors, units_count, house_units_count, apartment_units_count, tower_label, owner_user_id, latitude, longitude, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
                 """;
-        try (Connection connection = dataSource.getConnection();
-                PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-            Long resolvedOwnerId = resolveOwnerUserId(connection, ownerUserId);
-            statement.setString(1, request.name());
-            statement.setString(2, request.address());
-            statement.setString(3, request.commune());
-            statement.setString(4, request.city());
-            statement.setString(5, request.adminPhone());
-            statement.setString(6, request.adminEmail());
-            if (request.floors() != null) {
-                statement.setInt(7, request.floors());
-            } else {
-                statement.setNull(7, java.sql.Types.INTEGER);
-            }
-            if (request.unitsCount() != null) {
-                statement.setInt(8, request.unitsCount());
-            } else {
-                statement.setNull(8, java.sql.Types.INTEGER);
-            }
-            statement.setString(9, request.towerLabel());
-            if (resolvedOwnerId != null) {
-                statement.setLong(10, resolvedOwnerId);
-            } else {
-                statement.setNull(10, java.sql.Types.BIGINT);
-            }
-            if (request.latitude() != null) {
-                statement.setDouble(11, request.latitude());
-            } else {
-                statement.setNull(11, java.sql.Types.DOUBLE);
-            }
-            if (request.longitude() != null) {
-                statement.setDouble(12, request.longitude());
-            } else {
-                statement.setNull(12, java.sql.Types.DOUBLE);
-            }
-            statement.executeUpdate();
-            try (ResultSet keys = statement.getGeneratedKeys()) {
-                if (keys.next()) {
-                    return keys.getLong(1);
+        try (Connection connection = dataSource.getConnection()) {
+            boolean previousAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                Long buildingId;
+                try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                    Long resolvedOwnerId = resolveOwnerUserId(connection, ownerUserId);
+                    statement.setString(1, request.name());
+                    statement.setString(2, request.address());
+                    statement.setString(3, request.commune());
+                    statement.setString(4, request.city());
+                    statement.setString(5, request.adminPhone());
+                    statement.setString(6, request.adminEmail());
+                    statement.setString(7, request.buildingType());
+                    if (request.floors() != null) {
+                        statement.setInt(8, request.floors());
+                    } else {
+                        statement.setNull(8, java.sql.Types.INTEGER);
+                    }
+                    if (request.unitsCount() != null) {
+                        statement.setInt(9, request.unitsCount());
+                    } else {
+                        statement.setNull(9, java.sql.Types.INTEGER);
+                    }
+                    if (request.houseUnitsCount() != null) {
+                        statement.setInt(10, request.houseUnitsCount());
+                    } else {
+                        statement.setNull(10, java.sql.Types.INTEGER);
+                    }
+                    if (request.apartmentUnitsCount() != null) {
+                        statement.setInt(11, request.apartmentUnitsCount());
+                    } else {
+                        statement.setNull(11, java.sql.Types.INTEGER);
+                    }
+                    statement.setString(12, request.towerLabel());
+                    if (resolvedOwnerId != null) {
+                        statement.setLong(13, resolvedOwnerId);
+                    } else {
+                        statement.setNull(13, java.sql.Types.BIGINT);
+                    }
+                    if (request.latitude() != null) {
+                        statement.setDouble(14, request.latitude());
+                    } else {
+                        statement.setNull(14, java.sql.Types.DOUBLE);
+                    }
+                    if (request.longitude() != null) {
+                        statement.setDouble(15, request.longitude());
+                    } else {
+                        statement.setNull(15, java.sql.Types.DOUBLE);
+                    }
+                    statement.executeUpdate();
+                    try (ResultSet keys = statement.getGeneratedKeys()) {
+                        if (keys.next()) {
+                            buildingId = keys.getLong(1);
+                        } else {
+                            throw new RepositoryException("No se pudo obtener el id del edificio creado");
+                        }
+                    }
                 }
+
+                int unitsToCreate = resolveUnitsToCreate(request);
+                if (unitsToCreate > 0) {
+                    insertBlankHousingUnits(connection, buildingId, unitsToCreate);
+                }
+
+                connection.commit();
+                return buildingId;
+            } catch (Exception e) {
+                connection.rollback();
+                throw e;
+            } finally {
+                connection.setAutoCommit(previousAutoCommit);
             }
-            throw new RepositoryException("No se pudo obtener el id del edificio creado");
         } catch (SQLException e) {
             throw new RepositoryException("Error creando edificio desde solicitud", e);
+        }
+    }
+
+    private int resolveUnitsToCreate(BuildingRequest request) {
+        int units = request.unitsCount() != null ? request.unitsCount() : 0;
+        if (units > 0) {
+            return units;
+        }
+        int houses = request.houseUnitsCount() != null ? request.houseUnitsCount() : 0;
+        int apartments = request.apartmentUnitsCount() != null ? request.apartmentUnitsCount() : 0;
+        return Math.max(0, houses + apartments);
+    }
+
+    private void insertBlankHousingUnits(Connection connection, Long buildingId, int unitsCount) throws SQLException {
+        String unitSql = """
+                INSERT INTO housing_units (building_id, number, tower, floor, status)
+                VALUES (?, '', '', '', 'ACTIVE')
+                """;
+        try (PreparedStatement statement = connection.prepareStatement(unitSql)) {
+            for (int i = 0; i < unitsCount; i++) {
+                statement.setLong(1, buildingId);
+                statement.addBatch();
+            }
+            statement.executeBatch();
         }
     }
 
@@ -405,7 +471,7 @@ public class BuildingRepository {
 
     private BuildingRequest mapRequest(ResultSet rs) throws SQLException {
         Long id = rs.getLong("id");
-        Long requestedBy = rs.getLong("requested_by_user_id");
+        Long requestedBy = (Long) rs.getObject("requested_by_user_id");
         String name = rs.getString("name");
         String towerLabel = rs.getString("tower_label");
         String address = rs.getString("address");
@@ -415,8 +481,11 @@ public class BuildingRepository {
         String adminEmail = rs.getString("admin_email");
         String adminName = rs.getString("admin_name");
         String adminDocument = rs.getString("admin_document");
+        String buildingType = rs.getString("building_type");
         Integer floors = (Integer) rs.getObject("floors");
         Integer unitsCount = (Integer) rs.getObject("units_count");
+        Integer houseUnitsCount = (Integer) rs.getObject("house_units_count");
+        Integer apartmentUnitsCount = (Integer) rs.getObject("apartment_units_count");
         BigDecimal latitudeRaw = rs.getBigDecimal("latitude");
         BigDecimal longitudeRaw = rs.getBigDecimal("longitude");
         Double latitude = latitudeRaw != null ? latitudeRaw.doubleValue() : null;
@@ -457,8 +526,11 @@ public class BuildingRepository {
                 adminEmail,
                 adminName,
                 adminDocument,
+                buildingType,
                 floors,
                 unitsCount,
+                houseUnitsCount,
+                apartmentUnitsCount,
                 latitude,
                 longitude,
                 proofText,

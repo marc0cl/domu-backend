@@ -19,12 +19,17 @@ import org.slf4j.LoggerFactory;
 import io.javalin.http.UnauthorizedResponse;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 public class BuildingService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BuildingService.class);
+    private static final String BUILDING_TYPE_HOUSE = "HOUSE";
+    private static final String BUILDING_TYPE_APARTMENT = "APARTMENT";
+    private static final String BUILDING_TYPE_MIXED = "MIXED";
+    private static final Long ADMIN_ROLE_ID = 1L;
     private static final String INVALID_APPROVAL_LINK_MESSAGE = "El enlace no es válido o ya expiró.";
 
     private final BuildingRepository repository;
@@ -61,8 +66,11 @@ public class BuildingService {
                 request.getAdminEmail(),
                 request.getAdminName(),
                 request.getAdminDocument(),
+                request.getBuildingType(),
                 request.getFloors(),
                 request.getUnitsCount(),
+                request.getHouseUnitsCount(),
+                request.getApartmentUnitsCount(),
                 request.getLatitude(),
                 request.getLongitude(),
                 request.getProofText(),
@@ -122,8 +130,8 @@ public class BuildingService {
             }
         }
 
-        String inviteUrl = buildAndPersistAdminInvite(request, buildingId);
-        CompletableFuture.runAsync(() -> sendApprovedNotification(request, inviteUrl));
+        AdminOnboardingResult onboarding = buildAndPersistAdminInvite(request, buildingId);
+        CompletableFuture.runAsync(() -> sendApprovedNotification(request, onboarding));
 
         return new BuildingRequestResponse(
                 requestId,
@@ -151,8 +159,8 @@ public class BuildingService {
                 LOGGER.warn("No se pudo mover la solicitud {} a 'aprobadas' en Box: {}", request.id(), e.getMessage());
             }
         }
-        String inviteUrl = buildAndPersistAdminInvite(request, buildingId);
-        CompletableFuture.runAsync(() -> sendApprovedNotification(request, inviteUrl));
+        AdminOnboardingResult onboarding = buildAndPersistAdminInvite(request, buildingId);
+        CompletableFuture.runAsync(() -> sendApprovedNotification(request, onboarding));
         return request;
     }
 
@@ -186,6 +194,73 @@ public class BuildingService {
         if (request.getLongitude() != null && (request.getLongitude() < -180 || request.getLongitude() > 180)) {
             throw new ValidationException("longitude debe estar entre -180 y 180");
         }
+
+        String buildingType = normalizeBuildingType(request.getBuildingType());
+        request.setBuildingType(buildingType);
+
+        Integer unitsCount = normalizePositiveInt(request.getUnitsCount());
+        Integer floors = normalizePositiveInt(request.getFloors());
+        Integer houseUnitsCount = normalizePositiveInt(request.getHouseUnitsCount());
+        Integer apartmentUnitsCount = normalizePositiveInt(request.getApartmentUnitsCount());
+
+        if (buildingType.equals(BUILDING_TYPE_HOUSE)) {
+            houseUnitsCount = houseUnitsCount != null ? houseUnitsCount : unitsCount;
+            if (houseUnitsCount == null) {
+                throw new ValidationException("houseUnitsCount es obligatorio para comunidades de casas");
+            }
+            floors = null;
+            apartmentUnitsCount = null;
+            unitsCount = houseUnitsCount;
+        } else if (buildingType.equals(BUILDING_TYPE_APARTMENT)) {
+            apartmentUnitsCount = apartmentUnitsCount != null ? apartmentUnitsCount : unitsCount;
+            if (apartmentUnitsCount == null) {
+                throw new ValidationException("apartmentUnitsCount es obligatorio para comunidades de departamentos");
+            }
+            if (floors == null) {
+                throw new ValidationException("floors es obligatorio para comunidades de departamentos");
+            }
+            houseUnitsCount = null;
+            unitsCount = apartmentUnitsCount;
+        } else {
+            if (houseUnitsCount == null) {
+                throw new ValidationException("houseUnitsCount es obligatorio cuando el tipo es ambos");
+            }
+            if (apartmentUnitsCount == null) {
+                throw new ValidationException("apartmentUnitsCount es obligatorio cuando el tipo es ambos");
+            }
+            if (floors == null) {
+                throw new ValidationException("floors es obligatorio cuando el tipo es ambos");
+            }
+            unitsCount = houseUnitsCount + apartmentUnitsCount;
+        }
+
+        request.setFloors(floors);
+        request.setHouseUnitsCount(houseUnitsCount);
+        request.setApartmentUnitsCount(apartmentUnitsCount);
+        request.setUnitsCount(unitsCount);
+    }
+
+    private String normalizeBuildingType(String rawType) {
+        if (rawType == null || rawType.isBlank()) {
+            return BUILDING_TYPE_HOUSE;
+        }
+        String normalized = rawType.trim().toUpperCase(Locale.ROOT);
+        if (!normalized.equals(BUILDING_TYPE_HOUSE)
+                && !normalized.equals(BUILDING_TYPE_APARTMENT)
+                && !normalized.equals(BUILDING_TYPE_MIXED)) {
+            throw new ValidationException("buildingType debe ser HOUSE, APARTMENT o MIXED");
+        }
+        return normalized;
+    }
+
+    private Integer normalizePositiveInt(Integer value) {
+        if (value == null) {
+            return null;
+        }
+        if (value <= 0) {
+            throw new ValidationException("Los valores numericos deben ser mayores a cero");
+        }
+        return value;
     }
 
     private void sendApprovalPreview(CreateBuildingRequest request, Long requestId,
@@ -325,17 +400,33 @@ public class BuildingService {
         return value == null || value.trim().isEmpty();
     }
 
-    private String buildAndPersistAdminInvite(BuildingRequest request, Long buildingId) {
+    private AdminOnboardingResult buildAndPersistAdminInvite(BuildingRequest request, Long buildingId) {
         if (buildingId == null || request.adminEmail() == null || request.adminEmail().isBlank()) {
-            return null;
+            return new AdminOnboardingResult(null, false);
         }
-        String code = java.util.UUID.randomUUID().toString();
-        LocalDateTime expiresAt = LocalDateTime.now().plusDays(7);
-        repository.updateAdminInvite(request.id(), code, expiresAt);
         String baseUrl = config.approvalBaseUrl() != null && !config.approvalBaseUrl().isBlank()
                 ? config.approvalBaseUrl()
                 : "http://localhost:5173";
-        return baseUrl + "/registrar-admin?code=" + code;
+
+        var existingUser = userService.findByEmail(request.adminEmail()).orElse(null);
+        if (existingUser != null && ADMIN_ROLE_ID.equals(existingUser.roleId())) {
+            NameParts nameParts = splitName(request.adminName());
+            userService.ensureAdminForBuilding(
+                    request.adminEmail(),
+                    request.adminPhone() != null ? request.adminPhone() : "000000000",
+                    request.adminDocument() != null ? request.adminDocument() : "N/A",
+                    nameParts.firstName(),
+                    nameParts.lastName(),
+                    "existing-admin-link",
+                    buildingId);
+            repository.markAdminInviteUsed(request.id());
+            return new AdminOnboardingResult(baseUrl + "/login", true);
+        }
+
+        String code = java.util.UUID.randomUUID().toString();
+        LocalDateTime expiresAt = LocalDateTime.now().plusDays(7);
+        repository.updateAdminInvite(request.id(), code, expiresAt);
+        return new AdminOnboardingResult(baseUrl + "/registrar-admin?code=" + code, false);
     }
 
     public BuildingRequest validateAdminInvite(String inviteCode) {
@@ -345,13 +436,17 @@ public class BuildingService {
     public com.domu.dto.AdminInviteInfoResponse getAdminInviteInfo(String inviteCode) {
         BuildingRequest request = fetchValidAdminInvite(inviteCode);
         NameParts nameParts = splitName(request.adminName());
+        boolean existingAdminAccount = userService.findByEmail(request.adminEmail())
+                .map(user -> ADMIN_ROLE_ID.equals(user.roleId()))
+                .orElse(false);
         return new com.domu.dto.AdminInviteInfoResponse(
                 request.name(),
                 request.adminEmail(),
                 nameParts.firstName(),
                 nameParts.lastName(),
                 request.adminPhone(),
-                request.adminDocument());
+                request.adminDocument(),
+                existingAdminAccount);
     }
 
     public void registerAdminFromInvite(String inviteCode, String rawPassword) {
@@ -365,11 +460,29 @@ public class BuildingService {
             String phone,
             String documentNumber,
             String rawPassword) {
+        BuildingRequest request = fetchValidAdminInvite(inviteCode);
+        NameParts nameParts = splitName(request.adminName());
+
+        var existingUser = userService.findByEmail(request.adminEmail()).orElse(null);
+        if (existingUser != null) {
+            if (!ADMIN_ROLE_ID.equals(existingUser.roleId())) {
+                throw new ValidationException("El correo ya existe con otro rol; usa un correo de administrador.");
+            }
+            userService.ensureAdminForBuilding(
+                    request.adminEmail(),
+                    request.adminPhone() != null ? request.adminPhone() : "000000000",
+                    request.adminDocument() != null ? request.adminDocument() : "N/A",
+                    nameParts.firstName(),
+                    nameParts.lastName(),
+                    "existing-admin-link",
+                    request.buildingId());
+            repository.markAdminInviteUsed(request.id());
+            return;
+        }
+
         if (rawPassword == null || rawPassword.isBlank()) {
             throw new ValidationException("La contraseña es obligatoria");
         }
-        BuildingRequest request = fetchValidAdminInvite(inviteCode);
-        NameParts nameParts = splitName(request.adminName());
 
         String resolvedFirstName = isBlank(firstName) ? nameParts.firstName() : firstName.trim();
         String resolvedLastName = isBlank(lastName) ? nameParts.lastName() : lastName.trim();
@@ -397,19 +510,23 @@ public class BuildingService {
         repository.markAdminInviteUsed(request.id());
     }
 
-    private void sendApprovedNotification(BuildingRequest request, String adminInviteUrl) {
+    private void sendApprovedNotification(BuildingRequest request, AdminOnboardingResult onboarding) {
         try {
             if (request.adminEmail() == null || request.adminEmail().isBlank()) {
                 LOGGER.warn("No se enviará notificación de aprobación: adminEmail vacío");
                 return;
             }
             String location = buildLocation(request.commune(), request.city());
+            String actionUrl = onboarding != null && onboarding.actionUrl() != null ? onboarding.actionUrl() : "";
+            boolean existingAdmin = onboarding != null && onboarding.existingAdminLinked();
+            String ctaLabel = existingAdmin ? "Iniciar sesión en DOMU" : "Crear usuario administrador";
             String html = BuildingApprovedEmailTemplate.render(Map.of(
                     "communityName", request.name(),
                     "adminName", request.adminName(),
                     "location", location,
                     "fileName", request.boxFileName() != null ? request.boxFileName() : "documento.pdf",
-                    "adminInviteUrl", adminInviteUrl != null ? adminInviteUrl : ""));
+                    "adminInviteUrl", actionUrl,
+                    "adminCtaLabel", ctaLabel));
             String subject = "Solicitud aprobada - " + request.name();
             emailService.sendHtml(request.adminEmail(), subject, html);
             LOGGER.info("Correo de aprobación enviado a {}", request.adminEmail());
@@ -437,4 +554,9 @@ public class BuildingService {
             LOGGER.warn("No se pudo enviar el correo de rechazo al solicitante: {}", e.getMessage());
         }
     }
+
+    private record AdminOnboardingResult(String actionUrl, boolean existingAdminLinked) {
+    }
 }
+
+

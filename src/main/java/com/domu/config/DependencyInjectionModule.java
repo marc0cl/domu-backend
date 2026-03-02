@@ -158,7 +158,13 @@ public class DependencyInjectionModule extends AbstractModule {
             "ALTER TABLE amenities MODIFY COLUMN image_url TEXT",
             "ALTER TABLE users MODIFY COLUMN avatar_box_id TEXT",
             "ALTER TABLE users MODIFY COLUMN privacy_avatar_box_id TEXT",
-            "ALTER TABLE chat_participant ADD COLUMN hidden_at TIMESTAMP NULL DEFAULT NULL"
+            "ALTER TABLE chat_participant ADD COLUMN hidden_at TIMESTAMP NULL DEFAULT NULL",
+            "ALTER TABLE buildings ADD COLUMN building_type VARCHAR(20) NULL",
+            "ALTER TABLE buildings ADD COLUMN house_units_count INT NULL",
+            "ALTER TABLE buildings ADD COLUMN apartment_units_count INT NULL",
+            "ALTER TABLE building_requests ADD COLUMN building_type VARCHAR(20) NULL",
+            "ALTER TABLE building_requests ADD COLUMN house_units_count INT NULL",
+            "ALTER TABLE building_requests ADD COLUMN apartment_units_count INT NULL"
         };
         try (java.sql.Connection conn = ds.getConnection()) {
             for (String sql : migrations) {

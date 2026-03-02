@@ -320,6 +320,11 @@ public final class WebServer {
             }
         });
 
+        javalin.get("/login", ctx -> {
+            String frontendBaseUrl = resolveFrontendBaseUrl();
+            ctx.redirect(frontendBaseUrl + "/login");
+        });
+
         javalin.get("/registrar-admin", ctx -> {
             String code = ctx.queryParam("code");
             if (code == null || code.isBlank()) {
@@ -342,10 +347,15 @@ public final class WebServer {
             String documentNumber = ctx.formParam("documentNumber");
             String password = ctx.formParam("password");
             try {
+                AdminInviteInfoResponse inviteInfo = buildingService.getAdminInviteInfo(code);
                 buildingService.registerAdminFromInvite(code, firstName, lastName, phone, documentNumber, password);
+                boolean existingAdmin = inviteInfo.existingAdminAccount();
+                String title = existingAdmin ? "Comunidad vinculada" : "Cuenta creada";
+                String detail = existingAdmin
+                        ? "Ya puedes iniciar sesión con tu cuenta de administrador."
+                        : "Ya puedes iniciar sesión con tu correo y la contraseña que definiste.";
                 ctx.contentType("text/html; charset=UTF-8");
-                ctx.result(renderAdminInviteResult(true, "Cuenta creada",
-                        "Ya puedes iniciar sesión con tu correo y la contraseña que definiste."));
+                ctx.result(renderAdminInviteResult(true, title, detail));
             } catch (ValidationException e) {
                 ctx.status(HttpStatus.BAD_REQUEST);
                 ctx.contentType("text/html; charset=UTF-8");
@@ -377,11 +387,9 @@ public final class WebServer {
 
         javalin.post("/api/admin-invites/{code}", ctx -> {
             String code = ctx.pathParam("code");
-            AdminInviteRegistrationRequest request = ctx.bodyValidator(AdminInviteRegistrationRequest.class)
-                    .check(body -> body.getPassword() != null && body.getPassword().length() >= 10,
-                            "La contraseña debe tener al menos 10 caracteres")
-                    .get();
+            AdminInviteRegistrationRequest request = ctx.bodyValidator(AdminInviteRegistrationRequest.class).get();
             try {
+                AdminInviteInfoResponse inviteInfo = buildingService.getAdminInviteInfo(code);
                 buildingService.registerAdminFromInvite(
                         code,
                         request.getFirstName(),
@@ -389,10 +397,16 @@ public final class WebServer {
                         request.getPhone(),
                         request.getDocumentNumber(),
                         request.getPassword());
+                boolean existingAdmin = inviteInfo.existingAdminAccount();
+                String message = existingAdmin
+                        ? "Comunidad vinculada. Inicia sesión con tu cuenta existente."
+                        : "Cuenta creada. Ya puedes iniciar sesión con tu correo y la contraseña que definiste.";
                 ctx.status(HttpStatus.CREATED);
                 ctx.json(java.util.Map.of(
                         "message",
-                        "Cuenta creada. Ya puedes iniciar sesión con tu correo y la contraseña que definiste."));
+                        message,
+                        "existingAdminAccount",
+                        existingAdmin));
             } catch (ValidationException e) {
                 ctx.status(HttpStatus.BAD_REQUEST);
                 ctx.json(ErrorResponse.of(e.getMessage(), HttpStatus.BAD_REQUEST.getCode()));
@@ -1170,40 +1184,46 @@ public final class WebServer {
 
         javalin.get("/api/polls", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
             String status = ctx.queryParam("status");
-            ctx.json(pollService.list(user, status));
+            ctx.json(pollService.list(user, selectedBuildingId, status));
         });
 
         javalin.post("/api/polls", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
             CreatePollRequest request = ctx.bodyValidator(CreatePollRequest.class).get();
             ctx.status(HttpStatus.CREATED);
-            ctx.json(pollService.create(user, request));
+            ctx.json(pollService.create(user, selectedBuildingId, request));
         });
 
         javalin.get("/api/polls/{pollId}", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
             Long pollId = Long.parseLong(ctx.pathParam("pollId"));
-            ctx.json(pollService.get(user, pollId));
+            ctx.json(pollService.get(user, selectedBuildingId, pollId));
         });
 
         javalin.post("/api/polls/{pollId}/votes", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
             Long pollId = Long.parseLong(ctx.pathParam("pollId"));
             VoteRequest request = ctx.bodyValidator(VoteRequest.class).get();
-            ctx.json(pollService.vote(user, pollId, request));
+            ctx.json(pollService.vote(user, selectedBuildingId, pollId, request));
         });
 
         javalin.patch("/api/polls/{pollId}/close", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
             Long pollId = Long.parseLong(ctx.pathParam("pollId"));
-            ctx.json(pollService.close(user, pollId));
+            ctx.json(pollService.close(user, selectedBuildingId, pollId));
         });
 
         javalin.get("/api/polls/{pollId}/export", ctx -> {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
             Long pollId = Long.parseLong(ctx.pathParam("pollId"));
-            String csv = pollService.exportCsv(user, pollId);
+            String csv = pollService.exportCsv(user, selectedBuildingId, pollId);
             ctx.header("Content-Disposition", "attachment; filename=\"poll-" + pollId + ".csv\"");
             ctx.contentType("text/csv; charset=UTF-8");
             ctx.result(csv);
@@ -2049,8 +2069,11 @@ public final class WebServer {
             request.setAdminEmail(ctx.formParam("adminEmail"));
             request.setAdminName(ctx.formParam("adminName"));
             request.setAdminDocument(ctx.formParam("adminDocument"));
+            request.setBuildingType(ctx.formParam("buildingType"));
             request.setFloors(parseInteger(ctx.formParam("floors"), "floors"));
             request.setUnitsCount(parseInteger(ctx.formParam("unitsCount"), "unitsCount"));
+            request.setHouseUnitsCount(parseInteger(ctx.formParam("houseUnitsCount"), "houseUnitsCount"));
+            request.setApartmentUnitsCount(parseInteger(ctx.formParam("apartmentUnitsCount"), "apartmentUnitsCount"));
             request.setLatitude(parseDouble(ctx.formParam("latitude"), "latitude"));
             request.setLongitude(parseDouble(ctx.formParam("longitude"), "longitude"));
             request.setProofText(ctx.formParam("proofText"));
@@ -2425,3 +2448,6 @@ public final class WebServer {
         return label.toString().trim();
     }
 }
+
+
+
