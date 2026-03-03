@@ -1,10 +1,8 @@
 package com.domu.dto;
 
-import lombok.Builder;
 import java.time.LocalDateTime;
 import java.util.List;
 
-@Builder
 public record ChatRoomResponse(
     Long id,
     Long buildingId,
@@ -16,7 +14,6 @@ public record ChatRoomResponse(
     LocalDateTime createdAt,
     LocalDateTime lastMessageAt
 ) {
-    @Builder
     public record UserSummary(
         Long id,
         String name,

@@ -2,6 +2,8 @@ package com.domu.service;
 
 import com.domu.database.HousingUnitRepository;
 import com.domu.database.ParcelRepository;
+import com.domu.database.UserBuildingRepository;
+import com.domu.domain.NotificationType;
 import com.domu.domain.core.HousingUnit;
 import com.domu.domain.core.User;
 import com.domu.dto.ParcelRequest;
@@ -18,11 +20,16 @@ public class ParcelService {
 
     private final ParcelRepository parcelRepository;
     private final HousingUnitRepository housingUnitRepository;
+    private final NotificationService notificationService;
+    private final UserBuildingRepository userBuildingRepository;
 
     @Inject
-    public ParcelService(ParcelRepository parcelRepository, HousingUnitRepository housingUnitRepository) {
+    public ParcelService(ParcelRepository parcelRepository, HousingUnitRepository housingUnitRepository,
+                         NotificationService notificationService, UserBuildingRepository userBuildingRepository) {
         this.parcelRepository = parcelRepository;
         this.housingUnitRepository = housingUnitRepository;
+        this.notificationService = notificationService;
+        this.userBuildingRepository = userBuildingRepository;
     }
 
     public ParcelResponse create(User user, Long buildingId, ParcelRequest request) {
@@ -54,6 +61,14 @@ public class ParcelService {
                 null,
                 null,
                 null));
+
+        List<Long> unitResidents = userBuildingRepository.findUserIdsByUnitId(unit.id());
+        notificationService.notifyBuildingUsers(buildingId, unitResidents,
+                NotificationType.PARCEL_RECEIVED,
+                "Encomienda recibida de " + saved.sender(),
+                "Tienes una encomienda pendiente de retiro en conserjeria.",
+                "{\"parcelId\":" + saved.id() + "}");
+
         return toResponse(saved);
     }
 
@@ -109,6 +124,15 @@ public class ParcelService {
                 user.id(),
                 LocalDateTime.now(),
                 buildingId);
+
+        if (existing.receivedByUserId() != null) {
+            notificationService.notify(buildingId, existing.receivedByUserId(),
+                    NotificationType.PARCEL_COLLECTED,
+                    "Encomienda retirada - Unidad " + existing.unitNumber(),
+                    "La encomienda de " + existing.sender() + " fue retirada.",
+                    "{\"parcelId\":" + parcelId + "}");
+        }
+
         return toResponse(updated);
     }
 

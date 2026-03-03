@@ -1,17 +1,13 @@
 package com.domu.dto;
 
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-
 public record StaffRequest(
-        @NotNull Long buildingId,
-        @NotBlank String firstName,
-        @NotBlank String lastName,
-        @NotBlank String rut,
-        @Email String email,
+        Long buildingId,
+        String firstName,
+        String lastName,
+        String rut,
+        String email,
         String phone,
-        @NotBlank String position,
+        String position,
         boolean active
 ) {
 }

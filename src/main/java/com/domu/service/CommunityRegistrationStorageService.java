@@ -15,24 +15,24 @@ import java.nio.file.StandardOpenOption;
 
 /**
  * Handles storage for community registration documents.
- * Delegates to GcsStorageService for actual cloud storage operations.
+ * Delegates to BoxStorageService for actual cloud storage operations.
  */
 @Singleton
 public class CommunityRegistrationStorageService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CommunityRegistrationStorageService.class);
     private static final String LOCAL_STORAGE_ROOT = "var/local-storage/community-docs";
-    private final GcsStorageService gcs;
+    private final BoxStorageService box;
 
     @Inject
-    public CommunityRegistrationStorageService(GcsStorageService gcs) {
-        this.gcs = gcs;
+    public CommunityRegistrationStorageService(BoxStorageService box) {
+        this.box = box;
     }
 
     /**
-     * Uploads a community registration document to GCS.
+     * Uploads a community registration document to Box.
      *
-     * @return BoxUploadResult with GCS references (folderId is the object path prefix)
+     * @return BoxUploadResult with Box file ID
      */
     public BoxUploadResult uploadCommunityDocument(Long requestId, String communityName, String commune,
             CommunityRegistrationDocument document) {
@@ -52,15 +52,15 @@ public class CommunityRegistrationStorageService {
         String contentType = document.contentType() != null ? document.contentType() : "application/pdf";
         String folderPath = "community-docs/" + requestId;
         String safeFileName = sanitizeFileName(fileName);
-        String gcsPath = gcs.communityDocPath(requestId, safeFileName);
+        String boxPath = box.communityDocPath(requestId, safeFileName);
 
         try {
-            gcs.upload(gcsPath, document.content(), contentType);
-            LOGGER.info("Community document uploaded to GCS for request {}: {}", requestId, gcsPath);
-            return new BoxUploadResult(folderPath, folderPath, gcsPath, safeFileName);
-        } catch (Exception gcsError) {
-            LOGGER.error("GCS upload failed for request {}. Falling back to local storage. Cause: {}",
-                    requestId, gcsError.getMessage(), gcsError);
+            String fileId = box.upload(boxPath, document.content(), contentType);
+            LOGGER.info("Community document uploaded to Box for request {}: fileId={}", requestId, fileId);
+            return new BoxUploadResult(folderPath, folderPath, fileId, safeFileName);
+        } catch (Exception boxError) {
+            LOGGER.error("Box upload failed for request {}. Falling back to local storage. Cause: {}",
+                    requestId, boxError.getMessage(), boxError);
             String fallbackFileId = writeLocalFallback(requestId, safeFileName, document.content());
             LOGGER.warn("Community document stored locally for request {} with fileId={}", requestId, fallbackFileId);
             return new BoxUploadResult(folderPath, folderPath, fallbackFileId, safeFileName);
@@ -68,12 +68,10 @@ public class CommunityRegistrationStorageService {
     }
 
     /**
-     * Moves request to approved status — in GCS this is a no-op since we don't
-     * use folder hierarchies for status tracking. Status is tracked in the DB.
+     * Moves request to approved status — no-op since status is tracked in the DB.
      */
     public void moveRequestToApproved(String requestFolderId, String commune) {
-        // No-op for GCS. Status is tracked in the database, not via folder moves.
-        LOGGER.debug("moveRequestToApproved called (no-op for GCS): folder={}, commune={}", requestFolderId, commune);
+        LOGGER.debug("moveRequestToApproved called (no-op): folder={}, commune={}", requestFolderId, commune);
     }
 
     private String sanitizeFileName(String fileName) {

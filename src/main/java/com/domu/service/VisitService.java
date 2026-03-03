@@ -1,6 +1,9 @@
 package com.domu.service;
 
+import com.domu.database.HousingUnitRepository;
 import com.domu.database.VisitRepository;
+import com.domu.domain.NotificationType;
+import com.domu.domain.core.HousingUnit;
 import com.domu.domain.core.User;
 import com.domu.dto.CreateVisitRequest;
 import com.domu.dto.VisitListResponse;
@@ -22,10 +25,16 @@ public class VisitService {
     private static final Integer MAX_VALID_MINUTES = 24 * 60;
 
     private final VisitRepository visitRepository;
+    private final NotificationService notificationService;
+    private final HousingUnitRepository housingUnitRepository;
 
     @Inject
-    public VisitService(VisitRepository visitRepository) {
+    public VisitService(VisitRepository visitRepository,
+                        NotificationService notificationService,
+                        HousingUnitRepository housingUnitRepository) {
         this.visitRepository = visitRepository;
+        this.notificationService = notificationService;
+        this.housingUnitRepository = housingUnitRepository;
     }
 
     public VisitorQrResponse processQrScan(User user, VisitorQrRequest request) {
@@ -110,6 +119,18 @@ public class VisitService {
                 authorization.status(),
                 authorization.createdAt(),
                 null);
+
+        // Notify the resident if the visit was created by a concierge/admin on their behalf
+        if ((isConcierge(user) || isAdmin(user)) && unitId != null) {
+            housingUnitRepository.findById(unitId).ifPresent(unit -> {
+                Long buildingId = unit.buildingId();
+                notificationService.notify(buildingId, authorization.residentUserId(),
+                        NotificationType.VISIT_AUTHORIZED,
+                        "Visita autorizada: " + normalizedName,
+                        "Se ha autorizado el ingreso de " + normalizedName + ".",
+                        "{\"visitId\":" + visit.id() + "}");
+            });
+        }
 
         return toResponse(summary, deriveStatus(summary, now));
     }
@@ -217,6 +238,18 @@ public class VisitService {
                 "CHECKED_IN",
                 existing.createdAt(),
                 now);
+
+        // Notify the resident who authorized the visit
+        if (existing.unitId() != null) {
+            housingUnitRepository.findById(existing.unitId()).ifPresent(unit -> {
+                Long buildingId = unit.buildingId();
+                notificationService.notify(buildingId, existing.residentUserId(),
+                        NotificationType.VISIT_CHECKED_IN,
+                        existing.visitorName() + " ha ingresado",
+                        "Tu visita " + existing.visitorName() + " ha registrado su ingreso.",
+                        "{\"visitId\":" + existing.visitId() + "}");
+            });
+        }
 
         return toResponse(updated, "CHECKED_IN");
     }

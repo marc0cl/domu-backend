@@ -6,6 +6,8 @@ import com.domu.database.BuildingRepository;
 import com.domu.database.MarketRepository;
 import com.domu.database.UserBuildingRepository;
 import com.domu.database.UserRepository;
+import com.domu.domain.NotificationType;
+import com.domu.domain.core.User;
 import com.domu.dto.ChatRequestResponse;
 import com.domu.web.ChatWebSocketHandler;
 import com.google.inject.Inject;
@@ -26,6 +28,7 @@ public class ChatRequestService {
     private final BuildingRepository buildingRepository;
     private final MarketRepository marketRepository;
     private final ChatWebSocketHandler wsHandler;
+    private final NotificationService notificationService;
 
     @Inject
     public ChatRequestService(ChatRequestRepository repository,
@@ -34,7 +37,8 @@ public class ChatRequestService {
             UserRepository userRepository,
             BuildingRepository buildingRepository,
             MarketRepository marketRepository,
-            ChatWebSocketHandler wsHandler) {
+            ChatWebSocketHandler wsHandler,
+            NotificationService notificationService) {
         this.repository = repository;
         this.chatRepository = chatRepository;
         this.userBuildingRepository = userBuildingRepository;
@@ -42,6 +46,7 @@ public class ChatRequestService {
         this.buildingRepository = buildingRepository;
         this.marketRepository = marketRepository;
         this.wsHandler = wsHandler;
+        this.notificationService = notificationService;
     }
 
     public List<ChatRequestResponse> getPendingRequests(Long userId, Long buildingId) {
@@ -74,7 +79,18 @@ public class ChatRequestService {
         if (chatRepository.findDirectChatRoom(senderId, receiverId, buildingId).isPresent()) {
             throw new ValidationException("Ya tienes una conversación activa con este vecino.");
         }
-        return repository.insertRequest(senderId, receiverId, buildingId, itemId, message);
+        Long requestId = repository.insertRequest(senderId, receiverId, buildingId, itemId, message);
+
+        String senderName = userRepository.findById(senderId)
+                .map(User::publicName)
+                .orElse("Un vecino");
+        notificationService.notify(buildingId, receiverId,
+                NotificationType.CHAT_REQUEST_RECEIVED,
+                "Solicitud de chat de " + senderName,
+                senderName + " quiere iniciar una conversacion contigo.",
+                "{\"requestId\":" + requestId + "}");
+
+        return requestId;
     }
 
     public void updateRequestStatus(Long requestId, String status, Long actingUserId, Long selectedBuildingId) {
@@ -110,6 +126,15 @@ public class ChatRequestService {
             if (req.initialMessage() != null && !req.initialMessage().isBlank()) {
                 chatRepository.insertMessage(roomId, req.senderId(), req.initialMessage(), "TEXT", null);
             }
+
+            String receiverName = userRepository.findById(actingUserId)
+                    .map(User::publicName)
+                    .orElse("Un vecino");
+            notificationService.notify(req.buildingId(), req.senderId(),
+                    NotificationType.CHAT_REQUEST_ACCEPTED,
+                    receiverName + " acepto tu solicitud de chat",
+                    "Ya puedes conversar con " + receiverName + ".",
+                    "{\"roomId\":" + roomId + "}");
         }
     }
 

@@ -6,6 +6,7 @@ import com.domu.database.AmenityRepository.ReservationRow;
 import com.domu.database.AmenityRepository.TimeSlotRow;
 import com.domu.database.BuildingRepository;
 import com.domu.database.UserBuildingRepository;
+import com.domu.domain.NotificationType;
 import com.domu.domain.core.User;
 import com.domu.dto.AmenityListResponse;
 import com.domu.dto.AmenityRequest;
@@ -39,14 +40,17 @@ public class AmenityService {
     private final BuildingRepository buildingRepository;
     private final UserBuildingRepository userBuildingRepository;
     private final CommonExpenseService commonExpenseService;
+    private final NotificationService notificationService;
 
     @Inject
     public AmenityService(AmenityRepository amenityRepository, BuildingRepository buildingRepository,
-            UserBuildingRepository userBuildingRepository, CommonExpenseService commonExpenseService) {
+            UserBuildingRepository userBuildingRepository, CommonExpenseService commonExpenseService,
+            NotificationService notificationService) {
         this.amenityRepository = amenityRepository;
         this.buildingRepository = buildingRepository;
         this.userBuildingRepository = userBuildingRepository;
         this.commonExpenseService = commonExpenseService;
+        this.notificationService = notificationService;
     }
 
     // ==================== AMENITIES ====================
@@ -322,6 +326,12 @@ public class AmenityService {
                 null,
                 null, null, null, null, null, null));
 
+        notificationService.notify(amenity.buildingId(), user.id(),
+                NotificationType.RESERVATION_CONFIRMED,
+                "Reserva confirmada: " + amenity.name(),
+                "Tu reserva para " + amenity.name() + " el " + date + " ha sido confirmada.",
+                "{\"reservationId\":" + saved.id() + ",\"amenityId\":" + amenityId + "}");
+
         return toReservationResponse(saved);
     }
 
@@ -347,6 +357,18 @@ public class AmenityService {
         }
 
         ReservationRow cancelled = amenityRepository.cancelReservation(reservationId);
+
+        // If admin cancelled someone else's reservation, notify the owner
+        if (!isOwner && reservation.userId() != null) {
+            amenityRepository.findAmenityById(reservation.amenityId()).ifPresent(amenity -> {
+                notificationService.notify(amenity.buildingId(), reservation.userId(),
+                        NotificationType.RESERVATION_CANCELLED,
+                        "Reserva cancelada: " + amenity.name(),
+                        "Tu reserva para " + amenity.name() + " ha sido cancelada por el administrador.",
+                        "{\"reservationId\":" + reservationId + ",\"amenityId\":" + reservation.amenityId() + "}");
+            });
+        }
+
         return toReservationResponse(cancelled);
     }
 

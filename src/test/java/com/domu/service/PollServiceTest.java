@@ -35,11 +35,14 @@ class PollServiceTest {
     @Mock
     private UserBuildingRepository userBuildingRepository;
 
+    @Mock
+    private NotificationService notificationService;
+
     private PollService pollService;
 
     @BeforeEach
     void setUp() {
-        pollService = new PollService(pollRepository, buildingRepository, userBuildingRepository);
+        pollService = new PollService(pollRepository, buildingRepository, userBuildingRepository, notificationService);
     }
 
     @Test
@@ -47,7 +50,7 @@ class PollServiceTest {
         User resident = sampleUser(2L);
         CreatePollRequest request = baseRequest();
 
-        assertThrows(UnauthorizedResponse.class, () -> pollService.create(resident, request));
+        assertThrows(UnauthorizedResponse.class, () -> pollService.create(resident, 1L, request));
         verifyNoInteractions(pollRepository);
     }
 
@@ -57,7 +60,7 @@ class PollServiceTest {
         CreatePollRequest request = baseRequest();
         request.setOptions(List.of("Única"));
 
-        assertThrows(ValidationException.class, () -> pollService.create(admin, request));
+        assertThrows(ValidationException.class, () -> pollService.create(admin, 1L, request));
         verifyNoInteractions(pollRepository);
     }
 

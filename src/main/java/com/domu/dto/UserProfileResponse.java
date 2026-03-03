@@ -1,9 +1,7 @@
 package com.domu.dto;
 
-import lombok.Builder;
 import java.util.List;
 
-@Builder
 public record UserProfileResponse(
     Long id,
     String firstName,

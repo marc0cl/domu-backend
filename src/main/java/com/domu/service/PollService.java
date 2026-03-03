@@ -6,6 +6,7 @@ import com.domu.database.PollRepository.PollOptionRow;
 import com.domu.database.PollRepository.PollRow;
 import com.domu.database.PollRepository.PollVoteRow;
 import com.domu.database.UserBuildingRepository;
+import com.domu.domain.NotificationType;
 import com.domu.domain.core.User;
 import com.domu.dto.CreatePollRequest;
 import com.domu.dto.PollListResponse;
@@ -30,13 +31,16 @@ public class PollService {
     private final PollRepository pollRepository;
     private final BuildingRepository buildingRepository;
     private final UserBuildingRepository userBuildingRepository;
+    private final NotificationService notificationService;
 
     @Inject
     public PollService(PollRepository pollRepository, BuildingRepository buildingRepository,
-            UserBuildingRepository userBuildingRepository) {
+            UserBuildingRepository userBuildingRepository,
+            NotificationService notificationService) {
         this.pollRepository = pollRepository;
         this.buildingRepository = buildingRepository;
         this.userBuildingRepository = userBuildingRepository;
+        this.notificationService = notificationService;
     }
 
     public PollResponse create(User user, Long selectedBuildingId, CreatePollRequest request) {
@@ -64,6 +68,13 @@ public class PollService {
                 .filter(o -> !o.isBlank())
                 .collect(Collectors.toList());
         List<PollOptionRow> options = pollRepository.insertOptions(saved.id(), normalizedOptions);
+
+        notificationService.notifyAllBuildingUsers(buildingId,
+                NotificationType.POLL_CREATED,
+                "Nueva votacion: " + saved.title(),
+                "Se ha abierto una nueva votacion.",
+                "{\"pollId\":" + saved.id() + "}",
+                user.id());
 
         return toResponse(saved, options, null);
     }
@@ -154,6 +165,14 @@ public class PollService {
         ensureSameBuilding(user, selectedBuildingId, poll.buildingId());
         PollRow closed = pollRepository.closePoll(poll.id(), LocalDateTime.now());
         List<PollOptionRow> options = pollRepository.findOptions(closed.id());
+
+        notificationService.notifyAllBuildingUsers(poll.buildingId(),
+                NotificationType.POLL_CLOSED,
+                "Votacion cerrada: " + poll.title(),
+                "La votacion \"" + poll.title() + "\" ha sido cerrada.",
+                "{\"pollId\":" + poll.id() + "}",
+                null);
+
         return toResponse(closed, options, null);
     }
 

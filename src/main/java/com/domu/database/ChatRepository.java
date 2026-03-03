@@ -36,17 +36,17 @@ public class ChatRepository {
                 List<ChatRoomResponse> rooms = new ArrayList<>();
                 while (rs.next()) {
                     Long roomId = rs.getLong("id");
-                    rooms.add(ChatRoomResponse.builder()
-                            .id(roomId)
-                            .buildingId(rs.getLong("building_id"))
-                            .itemId(rs.getLong("item_id"))
-                            .itemTitle(rs.getString("item_title"))
-                            .itemImageUrl(rs.getString("item_image"))
-                            .participants(findParticipantsByRoom(roomId))
-                            .lastMessage(findLastMessageByRoom(roomId).orElse(null))
-                            .createdAt(rs.getTimestamp("created_at").toLocalDateTime())
-                            .lastMessageAt(rs.getTimestamp("last_message_at").toLocalDateTime())
-                            .build());
+                    rooms.add(new ChatRoomResponse(
+                            roomId,
+                            rs.getLong("building_id"),
+                            rs.getLong("item_id"),
+                            rs.getString("item_title"),
+                            rs.getString("item_image"),
+                            findParticipantsByRoom(roomId),
+                            findLastMessageByRoom(roomId).orElse(null),
+                            rs.getTimestamp("created_at").toLocalDateTime(),
+                            rs.getTimestamp("last_message_at").toLocalDateTime()
+                    ));
                 }
                 return rooms;
             }
@@ -219,12 +219,12 @@ public class ChatRepository {
                     String name = (displayName != null && !displayName.isBlank())
                             ? displayName
                             : rs.getString("first_name") + " " + rs.getString("last_name");
-                    users.add(ChatRoomResponse.UserSummary.builder()
-                            .id(rs.getLong("id"))
-                            .name(name)
-                            .photoUrl(rs.getString("avatar_box_id"))
-                            .isTyping(rs.getBoolean("is_typing"))
-                            .build());
+                    users.add(new ChatRoomResponse.UserSummary(
+                            rs.getLong("id"),
+                            name,
+                            rs.getString("avatar_box_id"),
+                            rs.getBoolean("is_typing")
+                    ));
                 }
                 return users;
             }
@@ -237,16 +237,17 @@ public class ChatRepository {
     }
 
     private ChatMessageResponse mapMessage(ResultSet rs) throws SQLException {
-        return ChatMessageResponse.builder()
-                .id(rs.getLong("id"))
-                .roomId(rs.getLong("room_id"))
-                .senderId(rs.getLong("sender_id"))
-                .senderName(rs.getString("first_name") + " " + rs.getString("last_name"))
-                .content(rs.getString("content"))
-                .type(rs.getString("type"))
-                .boxFileId(rs.getString("box_file_id"))
-                .createdAt(rs.getTimestamp("created_at").toLocalDateTime())
-                .build();
+        return new ChatMessageResponse(
+                rs.getLong("id"),
+                rs.getLong("room_id"),
+                rs.getLong("sender_id"),
+                rs.getString("first_name") + " " + rs.getString("last_name"),
+                rs.getString("content"),
+                rs.getString("type"),
+                rs.getString("box_file_id"),
+                rs.getTimestamp("created_at").toLocalDateTime(),
+                null
+        );
     }
 
     public void hideRoom(Long roomId, Long userId) {

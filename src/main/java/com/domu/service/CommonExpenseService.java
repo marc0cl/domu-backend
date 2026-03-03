@@ -2,6 +2,7 @@ package com.domu.service;
 
 import com.domu.database.CommonExpenseRepository;
 import com.domu.database.HousingUnitRepository;
+import com.domu.domain.NotificationType;
 import com.domu.domain.core.HousingUnit;
 import com.domu.domain.core.User;
 import com.domu.domain.finance.CommonCharge;
@@ -39,14 +40,17 @@ public class CommonExpenseService {
     private final CommonExpenseRepository repository;
     private final HousingUnitRepository housingUnitRepository;
     private final CommonExpenseReceiptStorageService receiptStorageService;
+    private final NotificationService notificationService;
 
     @Inject
     public CommonExpenseService(CommonExpenseRepository repository,
                                 HousingUnitRepository housingUnitRepository,
-                                CommonExpenseReceiptStorageService receiptStorageService) {
+                                CommonExpenseReceiptStorageService receiptStorageService,
+                                NotificationService notificationService) {
         this.repository = repository;
         this.housingUnitRepository = housingUnitRepository;
         this.receiptStorageService = receiptStorageService;
+        this.notificationService = notificationService;
     }
 
     public CommonExpensePeriodResponse createPeriod(CreateCommonExpensePeriodRequest request, User user, Long buildingId) {
@@ -78,6 +82,13 @@ public class CommonExpenseService {
         repository.updatePeriodTotals(period.id(), total, reserveAmount, user != null ? user.id() : null);
         repository.insertRevision(period.id(), user != null ? user.id() : null, "CREATED",
                 request.getNote(), "charges=" + savedCharges.size());
+
+        notificationService.notifyAllBuildingUsers(buildingId,
+                NotificationType.CHARGE_PERIOD_CREATED,
+                "Nuevo gasto comun: " + request.getMonth() + "/" + request.getYear(),
+                "Se ha publicado un nuevo periodo de gastos comunes.",
+                "{\"periodId\":" + period.id() + "}",
+                null);
 
         return new CommonExpensePeriodResponse(
                 period.id(),
@@ -331,6 +342,17 @@ public class CommonExpenseService {
         );
         CommonPayment saved = repository.insertPayment(payment);
 
+        // Notify admins about the payment
+        if (balanceRow.charge().unitId() != null) {
+            housingUnitRepository.findById(balanceRow.charge().unitId()).ifPresent(unit -> {
+                notificationService.notifyBuildingUsersByRoles(unit.buildingId(), List.of(1L),
+                        NotificationType.PAYMENT_CONFIRMED,
+                        "Pago recibido - Unidad " + unit.number(),
+                        "Se registro un pago de $" + saved.amount() + ".",
+                        "{\"chargeId\":" + chargeId + ",\"paymentId\":" + saved.id() + "}");
+            });
+        }
+
         BigDecimal newPending = pending.subtract(saved.amount());
         CommonPaymentResponse.PaymentLine line = new CommonPaymentResponse.PaymentLine(
                 saved.amount(),
@@ -389,6 +411,17 @@ public class CommonExpenseService {
                 "Pago " + method.toLowerCase() + " - DOMU"
         );
         CommonPayment saved = repository.insertPayment(payment);
+
+        // Notify admins about the simulated payment
+        if (balanceRow.charge().unitId() != null) {
+            housingUnitRepository.findById(balanceRow.charge().unitId()).ifPresent(unit -> {
+                notificationService.notifyBuildingUsersByRoles(unit.buildingId(), List.of(1L),
+                        NotificationType.PAYMENT_CONFIRMED,
+                        "Pago recibido - Unidad " + unit.number(),
+                        "Se registro un pago de $" + saved.amount() + ".",
+                        "{\"chargeId\":" + chargeId + ",\"paymentId\":" + saved.id() + "}");
+            });
+        }
 
         BigDecimal newPending = pending.subtract(paymentAmount);
         CommonPaymentResponse.PaymentLine line = new CommonPaymentResponse.PaymentLine(
