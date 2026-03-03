@@ -63,9 +63,15 @@ import com.domu.service.PollService;
 import com.domu.service.ParcelService;
 import com.domu.service.TaskService;
 import com.domu.service.StaffService;
+import com.domu.service.ProviderService;
+import com.domu.service.ServiceOrderService;
 import com.domu.database.TaskRepository;
 import com.domu.dto.TaskRequest;
 import com.domu.dto.StaffRequest;
+import com.domu.dto.ProviderRequest;
+import com.domu.dto.ServiceOrderRequest;
+import com.domu.dto.ServiceOrderStatusRequest;
+import com.domu.dto.QuotationRequest;
 import com.domu.service.ChatRequestService;
 import com.domu.service.UserProfileService;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -94,6 +100,10 @@ import io.javalin.json.JavalinJackson;
 import io.javalin.http.UploadedFile;
 import io.javalin.validation.BodyValidator;
 import io.javalin.http.Context;
+import io.javalin.openapi.plugin.OpenApiPlugin;
+import io.javalin.openapi.plugin.OpenApiPluginConfiguration;
+import io.javalin.openapi.plugin.swagger.SwaggerPlugin;
+import io.javalin.openapi.plugin.swagger.SwaggerConfiguration;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -144,7 +154,11 @@ public final class WebServer {
     private final EmailService emailService;
     private final com.domu.database.UserRepository userRepository;
     private final ForumService forumService;
-    private final com.domu.service.GcsStorageService gcsStorageService;
+    private final com.domu.service.BoxStorageService boxStorageService;
+    private final com.domu.service.NotificationService notificationService;
+    private final NotificationWebSocketHandler notificationWebSocketHandler;
+    private final ProviderService providerService;
+    private final ServiceOrderService serviceOrderService;
     private final Javalin app;
     private Integer port = -1;
 
@@ -181,7 +195,11 @@ public final class WebServer {
             final EmailService emailService,
             final com.domu.database.UserRepository userRepository,
             final ForumService forumService,
-            final com.domu.service.GcsStorageService gcsStorageService) {
+            final com.domu.service.BoxStorageService boxStorageService,
+            final com.domu.service.NotificationService notificationService,
+            final NotificationWebSocketHandler notificationWebSocketHandler,
+            final ProviderService providerService,
+            final ServiceOrderService serviceOrderService) {
         this.dataSource = dataSource;
         this.userService = userService;
         this.commonExpenseService = commonExpenseService;
@@ -213,7 +231,11 @@ public final class WebServer {
         this.emailService = emailService;
         this.userRepository = userRepository;
         this.forumService = forumService;
-        this.gcsStorageService = gcsStorageService;
+        this.boxStorageService = boxStorageService;
+        this.notificationService = notificationService;
+        this.notificationWebSocketHandler = notificationWebSocketHandler;
+        this.providerService = providerService;
+        this.serviceOrderService = serviceOrderService;
         this.app = createApp();
     }
 
@@ -243,11 +265,26 @@ public final class WebServer {
             config.http.defaultContentType = "application/json";
             config.http.prefer405over404 = true;
             config.showJavalinBanner = false;
+
+            // OpenAPI / Swagger UI
+            config.registerPlugin(new OpenApiPlugin(openApiConfig ->
+                openApiConfig.withDefinitionConfiguration((version, definition) ->
+                    definition.withInfo(info -> {
+                        info.setTitle("DOMU API");
+                        info.setVersion("0.1.0");
+                        info.setDescription("API REST de la plataforma DOMU para gestion de comunidades residenciales");
+                    })
+                )
+            ));
+            config.registerPlugin(new SwaggerPlugin(swaggerConfig ->
+                swaggerConfig.setDocumentationPath("/openapi")
+            ));
         });
 
         registerExceptionHandlers(javalin);
         registerRoutes(javalin);
         javalin.ws("/ws/chat", chatWebSocketHandler::handle);
+        javalin.ws("/ws/notifications", notificationWebSocketHandler::handle);
         javalin.get("/health", ctx -> ctx.result("OK"));
 
         return javalin;
@@ -434,7 +471,7 @@ public final class WebServer {
             ctx.status(HttpStatus.CREATED);
             var buildings = loadBuildings(created);
             Long activeBuildingId = resolveActiveBuildingId(created, buildings);
-            ctx.json(UserMapper.toResponse(created, buildings, activeBuildingId, gcsStorageService));
+            ctx.json(UserMapper.toResponse(created, buildings, activeBuildingId, boxStorageService));
         });
 
         javalin.post("/api/auth/login", ctx -> {
@@ -443,7 +480,7 @@ public final class WebServer {
             String token = jwtProvider.generateToken(user);
             var buildings = loadBuildings(user);
             Long activeBuildingId = resolveActiveBuildingId(user, buildings);
-            ctx.json(new AuthResponse(token, UserMapper.toResponse(user, buildings, activeBuildingId, gcsStorageService)));
+            ctx.json(new AuthResponse(token, UserMapper.toResponse(user, buildings, activeBuildingId, boxStorageService)));
         });
 
         javalin.post("/api/auth/confirm", ctx -> {
@@ -524,6 +561,8 @@ public final class WebServer {
         javalin.before("/api/staff/*", authenticationHandler);
         javalin.before("/api/library", authenticationHandler);
         javalin.before("/api/library/*", authenticationHandler);
+        javalin.before("/api/notifications", authenticationHandler);
+        javalin.before("/api/notifications/*", authenticationHandler);
 
         // Extraer X-Building-Id header para filtrar datos por comunidad
         // La validación de acceso se hace en cada endpoint que use este valor
@@ -543,7 +582,7 @@ public final class WebServer {
             User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
             var buildings = loadBuildings(user);
             Long activeBuildingId = resolveActiveBuildingId(user, buildings);
-            UserResponse response = UserMapper.toResponseFromContext(ctx, buildings, activeBuildingId, gcsStorageService);
+            UserResponse response = UserMapper.toResponseFromContext(ctx, buildings, activeBuildingId, boxStorageService);
             ctx.json(response);
         });
 
@@ -584,7 +623,7 @@ public final class WebServer {
                     request.getDisplayName());
             var buildings = loadBuildings(updated);
             Long activeBuildingId = resolveActiveBuildingId(updated, buildings);
-            ctx.json(UserMapper.toResponse(updated, buildings, activeBuildingId, gcsStorageService));
+            ctx.json(UserMapper.toResponse(updated, buildings, activeBuildingId, boxStorageService));
         });
 
         javalin.post("/api/users/me/avatar", ctx -> {
@@ -662,7 +701,7 @@ public final class WebServer {
             Long activeBuildingId = resolveActiveBuildingId(created, buildings);
             sendUserCredentialsEmail(created, rawPassword);
             ctx.status(HttpStatus.CREATED);
-            ctx.json(UserMapper.toResponse(created, buildings, activeBuildingId, gcsStorageService));
+            ctx.json(UserMapper.toResponse(created, buildings, activeBuildingId, boxStorageService));
         });
 
         // Obtener residentes del edificio seleccionado, agrupados por unidad
@@ -1447,8 +1486,8 @@ public final class WebServer {
                     n.id(),
                     n.unitNumber(),
                     n.displayName(),
-                    UserMapper.resolveUrl(n.avatarUrl(), gcsStorageService),
-                    UserMapper.resolveUrl(n.privacyAvatarBoxId(), gcsStorageService)
+                    UserMapper.resolveUrl(n.avatarUrl(), boxStorageService),
+                    UserMapper.resolveUrl(n.privacyAvatarBoxId(), boxStorageService)
             )).toList();
             ctx.json(resolved);
         });
@@ -1781,6 +1820,340 @@ public final class WebServer {
             Long docId = Long.parseLong(ctx.pathParam("id"));
             libraryService.deleteDocument(selectedBuildingId, docId, user);
             ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        // ==================== FILE PROXY (Box) ====================
+
+        javalin.get("/api/files/{fileId}/download", ctx -> {
+            String fileId = ctx.pathParam("fileId");
+            if (fileId == null || fileId.isBlank()) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("fileId es requerido", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            byte[] content = boxStorageService.download(fileId);
+            if (content == null) {
+                ctx.status(HttpStatus.NOT_FOUND);
+                ctx.json(ErrorResponse.of("Archivo no encontrado", HttpStatus.NOT_FOUND.getCode()));
+                return;
+            }
+            String contentType = boxStorageService.guessContentType(fileId);
+            ctx.contentType(contentType);
+            ctx.header("Cache-Control", "public, max-age=3600");
+            ctx.result(content);
+        });
+
+        // ==================== NOTIFICATIONS ====================
+
+        javalin.get("/api/notifications", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
+            int page = ctx.queryParamAsClass("page", Integer.class).getOrDefault(0);
+            int size = ctx.queryParamAsClass("size", Integer.class).getOrDefault(20);
+            ctx.json(notificationService.getNotifications(user.id(), selectedBuildingId, page, size));
+        });
+
+        javalin.get("/api/notifications/unread-count", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
+            ctx.json(Map.of("count", notificationService.getUnreadCount(user.id(), selectedBuildingId)));
+        });
+
+        javalin.patch("/api/notifications/{id}/read", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long id = Long.parseLong(ctx.pathParam("id"));
+            boolean updated = notificationService.markRead(id, user.id());
+            if (updated) {
+                ctx.json(Map.of("success", true));
+            } else {
+                ctx.status(HttpStatus.NOT_FOUND);
+                ctx.json(ErrorResponse.of("Notificacion no encontrada", HttpStatus.NOT_FOUND.getCode()));
+            }
+        });
+
+        javalin.patch("/api/notifications/read-all", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            Long selectedBuildingId = requireSelectedBuilding(ctx, user);
+            int count = notificationService.markAllRead(user.id(), selectedBuildingId);
+            ctx.json(Map.of("updated", count));
+        });
+
+        javalin.get("/api/notifications/preferences", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            ctx.json(notificationService.getPreferences(user.id()));
+        });
+
+        javalin.put("/api/notifications/preferences", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            var request = ctx.bodyValidator(com.domu.dto.NotificationPreferenceUpdateRequest.class).get();
+            notificationService.updatePreference(user.id(), request.notificationType(), request.inAppEnabled());
+            ctx.json(Map.of("success", true));
+        });
+
+        // ==================== PROVIDERS (Admin) ====================
+
+        javalin.get("/api/admin/providers", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden ver proveedores", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            ctx.json(providerService.listByBuilding(selectedBuildingId));
+        });
+
+        javalin.post("/api/admin/providers", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden crear proveedores", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            ProviderRequest request = ctx.bodyValidator(ProviderRequest.class).get();
+            ProviderRequest validatedRequest = new ProviderRequest(
+                selectedBuildingId, request.userId(), request.businessName(), request.rut(),
+                request.contactName(), request.email(), request.phone(), request.address(),
+                request.serviceCategory(), request.active()
+            );
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(providerService.create(validatedRequest));
+        });
+
+        javalin.put("/api/admin/providers/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden actualizar proveedores", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long id = Long.parseLong(ctx.pathParam("id"));
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            ProviderRequest request = ctx.bodyValidator(ProviderRequest.class).get();
+            ProviderRequest validatedRequest = new ProviderRequest(
+                selectedBuildingId, request.userId(), request.businessName(), request.rut(),
+                request.contactName(), request.email(), request.phone(), request.address(),
+                request.serviceCategory(), request.active()
+            );
+            ctx.json(providerService.update(id, validatedRequest));
+        });
+
+        javalin.delete("/api/admin/providers/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden eliminar proveedores", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long id = Long.parseLong(ctx.pathParam("id"));
+            providerService.delete(id);
+            ctx.status(HttpStatus.NO_CONTENT);
+        });
+
+        // ==================== SERVICE ORDERS (Admin) ====================
+
+        javalin.get("/api/admin/service-orders", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden ver ordenes de servicio", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            ctx.json(serviceOrderService.listByBuilding(selectedBuildingId));
+        });
+
+        javalin.post("/api/admin/service-orders", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden crear ordenes de servicio", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            ServiceOrderRequest request = ctx.bodyValidator(ServiceOrderRequest.class).get();
+            ServiceOrderRequest validatedRequest = new ServiceOrderRequest(
+                selectedBuildingId, request.providerId(), request.title(),
+                request.description(), request.scheduledDate(), request.priority(), request.adminNotes()
+            );
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(serviceOrderService.create(validatedRequest, user.id()));
+        });
+
+        javalin.put("/api/admin/service-orders/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden actualizar ordenes", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long id = Long.parseLong(ctx.pathParam("id"));
+            Long selectedBuildingId = validateSelectedBuilding(ctx, user);
+            if (selectedBuildingId == null) {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(ErrorResponse.of("Debes seleccionar un edificio", HttpStatus.BAD_REQUEST.getCode()));
+                return;
+            }
+            ServiceOrderRequest request = ctx.bodyValidator(ServiceOrderRequest.class).get();
+            ServiceOrderRequest validatedRequest = new ServiceOrderRequest(
+                selectedBuildingId, request.providerId(), request.title(),
+                request.description(), request.scheduledDate(), request.priority(), request.adminNotes()
+            );
+            ctx.json(serviceOrderService.update(id, validatedRequest));
+        });
+
+        javalin.patch("/api/admin/service-orders/{id}/status", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden cambiar estado de ordenes", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long id = Long.parseLong(ctx.pathParam("id"));
+            ServiceOrderStatusRequest request = ctx.bodyValidator(ServiceOrderStatusRequest.class).get();
+            ctx.json(serviceOrderService.updateStatus(id, request.status(), request.notes()));
+        });
+
+        javalin.get("/api/admin/service-orders/{id}/quotations", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 1L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo administradores pueden ver cotizaciones", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long id = Long.parseLong(ctx.pathParam("id"));
+            ctx.json(serviceOrderService.listQuotations(id));
+        });
+
+        // ==================== PROVIDER PORTAL (roleId == 5) ====================
+
+        javalin.get("/api/provider/me", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 5L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo proveedores pueden acceder a este recurso", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            var provider = providerService.findByUserId(user.id());
+            if (provider.isEmpty()) {
+                ctx.status(HttpStatus.NOT_FOUND);
+                ctx.json(ErrorResponse.of("No se encontro perfil de proveedor para este usuario", HttpStatus.NOT_FOUND.getCode()));
+                return;
+            }
+            ctx.json(provider.get());
+        });
+
+        javalin.get("/api/provider/service-orders", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 5L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo proveedores pueden acceder a este recurso", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            var provider = providerService.findByUserId(user.id())
+                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado para este usuario"));
+            ctx.json(serviceOrderService.listByProvider(provider.id()));
+        });
+
+        javalin.get("/api/provider/service-orders/{id}", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 5L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo proveedores pueden acceder a este recurso", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long id = Long.parseLong(ctx.pathParam("id"));
+            var order = serviceOrderService.findById(id);
+            var provider = providerService.findByUserId(user.id())
+                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado para este usuario"));
+            if (!order.providerId().equals(provider.id())) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Esta orden no esta asignada a este proveedor", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            ctx.json(order);
+        });
+
+        javalin.patch("/api/provider/service-orders/{id}/accept", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 5L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo proveedores pueden acceder a este recurso", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long id = Long.parseLong(ctx.pathParam("id"));
+            var provider = providerService.findByUserId(user.id())
+                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado para este usuario"));
+            ctx.json(serviceOrderService.acceptOrder(id, provider.id()));
+        });
+
+        javalin.patch("/api/provider/service-orders/{id}/reject", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 5L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo proveedores pueden acceder a este recurso", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long id = Long.parseLong(ctx.pathParam("id"));
+            var provider = providerService.findByUserId(user.id())
+                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado para este usuario"));
+            ServiceOrderStatusRequest request = ctx.bodyValidator(ServiceOrderStatusRequest.class).get();
+            ctx.json(serviceOrderService.rejectOrder(id, provider.id(), request.notes()));
+        });
+
+        javalin.patch("/api/provider/service-orders/{id}/complete", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 5L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo proveedores pueden acceder a este recurso", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long id = Long.parseLong(ctx.pathParam("id"));
+            var provider = providerService.findByUserId(user.id())
+                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado para este usuario"));
+            ServiceOrderStatusRequest request = ctx.bodyValidator(ServiceOrderStatusRequest.class).get();
+            ctx.json(serviceOrderService.completeOrder(id, provider.id(), request.notes()));
+        });
+
+        javalin.post("/api/provider/service-orders/{id}/quotations", ctx -> {
+            User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
+            if (user == null || user.roleId() == null || user.roleId() != 5L) {
+                ctx.status(HttpStatus.FORBIDDEN);
+                ctx.json(ErrorResponse.of("Solo proveedores pueden acceder a este recurso", HttpStatus.FORBIDDEN.getCode()));
+                return;
+            }
+            Long id = Long.parseLong(ctx.pathParam("id"));
+            var provider = providerService.findByUserId(user.id())
+                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado para este usuario"));
+            QuotationRequest request = ctx.bodyValidator(QuotationRequest.class).get();
+            ctx.status(HttpStatus.CREATED);
+            ctx.json(serviceOrderService.submitQuotation(id, provider.id(), request));
         });
     }
 

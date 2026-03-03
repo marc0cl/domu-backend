@@ -7,68 +7,65 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Handles storage for marketplace images, chat audio, and profile images.
- * Delegates to GcsStorageService for actual cloud storage operations.
+ * Delegates to BoxStorageService for actual cloud storage operations.
  */
 @Singleton
 public class MarketplaceStorageService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MarketplaceStorageService.class);
-    private final GcsStorageService gcs;
+    private final BoxStorageService box;
 
     @Inject
-    public MarketplaceStorageService(GcsStorageService gcs) {
-        this.gcs = gcs;
+    public MarketplaceStorageService(BoxStorageService box) {
+        this.box = box;
     }
 
     /**
      * Uploads a marketplace item image, optimized for size.
      *
-     * @return GCS object path — signed URL is generated at read time
+     * @return Box file ID
      */
     public String uploadMarketImage(Long buildingId, Long itemId, String fileName, byte[] content) {
         byte[] optimized = ImageOptimizer.optimizeMarketImage(content);
         String ext = ImageOptimizer.outputExtension();
         String baseName = stripExtension(fileName) + "." + ext;
-        String path = gcs.marketImagePath(buildingId, itemId, baseName);
-        gcs.upload(path, optimized, ImageOptimizer.outputContentType());
-        return path; // Store path, not URL
+        String path = box.marketImagePath(buildingId, itemId, baseName);
+        return box.upload(path, optimized, ImageOptimizer.outputContentType());
     }
 
     /**
      * Uploads a chat audio file (no optimization).
      *
-     * @return public URL of the uploaded file
+     * @return Box file ID
      */
     public String uploadChatAudio(Long buildingId, Long roomId, String fileName, byte[] content) {
-        String path = gcs.chatAudioPath(roomId, fileName);
+        String path = box.chatAudioPath(roomId, fileName);
         String contentType = guessContentType(fileName);
-        return gcs.upload(path, content, contentType);
+        return box.upload(path, content, contentType);
     }
 
     /**
      * Uploads a profile image (avatar), optimized.
      *
-     * @return GCS object path (not URL) — signed URL is generated at read time
+     * @return Box file ID
      */
     public String uploadProfileImage(Long userId, String fileName, byte[] content) {
         byte[] optimized = ImageOptimizer.optimizeAvatar(content);
         String ext = ImageOptimizer.outputExtension();
-        String path = gcs.profileAvatarPath(userId, ext);
-        gcs.upload(path, optimized, ImageOptimizer.outputContentType());
-        return path; // Store the object path, not the URL
+        String path = box.profileAvatarPath(userId, ext);
+        return box.upload(path, optimized, ImageOptimizer.outputContentType());
     }
 
     /**
      * Uploads a privacy avatar image, optimized.
      *
-     * @return GCS object path (not URL) — signed URL is generated at read time
+     * @return Box file ID
      */
     public String uploadPrivacyImage(Long userId, String fileName, byte[] content) {
         byte[] optimized = ImageOptimizer.optimizeAvatar(content);
         String ext = ImageOptimizer.outputExtension();
-        String path = gcs.profilePrivacyAvatarPath(userId, ext);
-        gcs.upload(path, optimized, ImageOptimizer.outputContentType());
-        return path; // Store the object path, not the URL
+        String path = box.profilePrivacyAvatarPath(userId, ext);
+        return box.upload(path, optimized, ImageOptimizer.outputContentType());
     }
 
     private String stripExtension(String fileName) {

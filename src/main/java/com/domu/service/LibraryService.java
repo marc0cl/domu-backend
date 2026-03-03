@@ -17,26 +17,25 @@ public class LibraryService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LibraryService.class);
     private final LibraryRepository libraryRepository;
-    private final GcsStorageService gcsStorageService;
+    private final BoxStorageService boxStorageService;
 
     @Inject
-    public LibraryService(LibraryRepository libraryRepository, GcsStorageService gcsStorageService) {
+    public LibraryService(LibraryRepository libraryRepository, BoxStorageService boxStorageService) {
         this.libraryRepository = libraryRepository;
-        this.gcsStorageService = gcsStorageService;
+        this.boxStorageService = boxStorageService;
     }
 
     public List<LibraryDocumentResponse> listDocuments(Long buildingId) {
         return libraryRepository.findAllByBuildingId(buildingId).stream()
                 .map(doc -> {
-                    // Update signed URL if needed
-                    String signedUrl = gcsStorageService.signedUrl(gcsStorageService.extractObjectPath(doc.fileUrl()));
+                    String url = resolveFileUrl(doc.fileUrl());
                     return LibraryDocumentResponse.from(new LibraryDocument(
                             doc.id(),
                             doc.buildingId(),
                             doc.name(),
                             doc.category(),
                             doc.fileName(),
-                            signedUrl,
+                            url,
                             doc.size(),
                             doc.uploadDate(),
                             doc.uploadedBy()
@@ -54,8 +53,9 @@ public class LibraryService {
             throw new ValidationException("El archivo excede el límite de 30MB");
         }
 
-        String objectPath = gcsStorageService.libraryDocPath(buildingId, fileName);
-        String fileUrl = gcsStorageService.upload(objectPath, content, contentType);
+        String objectPath = boxStorageService.libraryDocPath(buildingId, fileName);
+        String fileId = boxStorageService.upload(objectPath, content, contentType);
+        String proxyUrl = boxStorageService.resolveUrl(fileId);
 
         LibraryDocument doc = new LibraryDocument(
                 null,
@@ -63,22 +63,21 @@ public class LibraryService {
                 name,
                 category,
                 fileName,
-                fileUrl,
+                fileId,
                 (long) content.length,
                 null,
                 user.id()
         );
 
         Long id = libraryRepository.save(doc);
-        String finalSignedUrl = gcsStorageService.signedUrl(objectPath);
-        
+
         return LibraryDocumentResponse.from(new LibraryDocument(
                 id,
                 doc.buildingId(),
                 doc.name(),
                 doc.category(),
                 doc.fileName(),
-                finalSignedUrl,
+                proxyUrl,
                 doc.size(),
                 doc.uploadDate(),
                 doc.uploadedBy()
@@ -86,16 +85,23 @@ public class LibraryService {
     }
 
     public void deleteDocument(Long buildingId, Long docId, User user) {
-        // Only admin can delete (checked in WebServer)
         var doc = libraryRepository.findById(docId)
                 .orElseThrow(() -> new ValidationException("Documento no encontrado"));
-        
+
         if (!doc.buildingId().equals(buildingId)) {
             throw new ValidationException("El documento no pertenece a este edificio");
         }
 
+        String fileUrl = doc.fileUrl();
         libraryRepository.delete(docId);
-        // We could also delete from GCS, but maybe keep for history as requested "evitando la perdida de informacion"
-        // gcsStorageService.delete(gcsStorageService.extractObjectPath(doc.fileUrl()));
+        if (fileUrl != null && !fileUrl.isBlank() && !fileUrl.startsWith("http")) {
+            boxStorageService.delete(fileUrl);
+        }
+    }
+
+    private String resolveFileUrl(String stored) {
+        if (stored == null || stored.isBlank()) return null;
+        if (stored.startsWith("http")) return stored;
+        return boxStorageService.resolveUrl(stored);
     }
 }

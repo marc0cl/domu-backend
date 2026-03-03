@@ -1,6 +1,7 @@
 package com.domu.service;
 
 import com.domu.database.ForumRepository;
+import com.domu.domain.NotificationType;
 import com.domu.dto.ForumThreadDto;
 import com.domu.dto.CreateThreadRequest;
 import com.domu.domain.core.User;
@@ -9,10 +10,13 @@ import java.util.List;
 
 public class ForumService {
     private final ForumRepository forumRepository;
+    private final NotificationService notificationService;
 
     @Inject
-    public ForumService(ForumRepository forumRepository) {
+    public ForumService(ForumRepository forumRepository,
+                        NotificationService notificationService) {
         this.forumRepository = forumRepository;
+        this.notificationService = notificationService;
     }
 
     public List<ForumThreadDto> getThreads(Long buildingId) {
@@ -44,6 +48,13 @@ public class ForumService {
 
         Long threadId = forumRepository.createThread(buildingId, user.id(), categoryId, request.getTitle(), isPinned);
         forumRepository.createPost(threadId, user.id(), request.getContent());
+
+        notificationService.notifyAllBuildingUsers(buildingId,
+                NotificationType.FORUM_THREAD_CREATED,
+                "Nueva publicacion: " + request.getTitle(),
+                "Se ha publicado un nuevo tema en el foro.",
+                "{\"threadId\":" + threadId + "}",
+                user.id());
     }
 
     public void updateThread(Long threadId, User user, CreateThreadRequest request) {

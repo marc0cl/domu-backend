@@ -262,11 +262,11 @@ public class MarketRepository {
             try (ResultSet rs = stmt.executeQuery()) {
                 List<MarketItemResponse.ImageInfo> images = new ArrayList<>();
                 while (rs.next()) {
-                    images.add(MarketItemResponse.ImageInfo.builder()
-                            .id(rs.getLong("id"))
-                            .url(rs.getString("url"))
-                            .isMain(rs.getBoolean("is_main"))
-                            .build());
+                    images.add(new MarketItemResponse.ImageInfo(
+                            rs.getLong("id"),
+                            rs.getString("url"),
+                            rs.getBoolean("is_main")
+                    ));
                 }
                 return images;
             }
@@ -289,23 +289,23 @@ public class MarketRepository {
         Long itemId = rs.getLong("id");
         List<MarketItemResponse.ImageInfo> imageInfos = findImageInfoByItem(itemId, conn);
         List<String> imageUrls = imageInfos.stream().map(MarketItemResponse.ImageInfo::url).toList();
-        return MarketItemResponse.builder()
-                .id(itemId)
-                .userId(rs.getLong("user_id"))
-                .sellerName(rs.getString("first_name") + " " + rs.getString("last_name"))
-                .sellerPhotoUrl(rs.getString("seller_avatar"))
-                .categoryId(rs.getLong("category_id"))
-                .categoryName(rs.getString("category_name"))
-                .title(rs.getString("title"))
-                .description(rs.getString("description"))
-                .price(rs.getDouble("price"))
-                .originalPriceLink(rs.getString("original_price_link"))
-                .status(rs.getString("status"))
-                .mainImageUrl(rs.getString("main_image_url"))
-                .images(imageInfos)
-                .imageUrls(imageUrls)
-                .createdAt(rs.getTimestamp("created_at").toLocalDateTime())
-                .build();
+        return new MarketItemResponse(
+                itemId,
+                rs.getLong("user_id"),
+                rs.getString("first_name") + " " + rs.getString("last_name"),
+                rs.getString("seller_avatar"),
+                rs.getLong("category_id"),
+                rs.getString("category_name"),
+                rs.getString("title"),
+                rs.getString("description"),
+                rs.getDouble("price"),
+                rs.getString("original_price_link"),
+                rs.getString("status"),
+                rs.getString("main_image_url"),
+                imageInfos,
+                imageUrls,
+                rs.getTimestamp("created_at").toLocalDateTime()
+        );
     }
 
     public record MarketItemAccessRow(Long id, Long userId, Long buildingId) {

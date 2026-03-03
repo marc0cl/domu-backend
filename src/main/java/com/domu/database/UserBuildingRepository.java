@@ -86,4 +86,85 @@ public class UserBuildingRepository {
             throw new RepositoryException("Error verificando acceso a edificio", e);
         }
     }
+
+    public List<Long> findUserIdsByBuilding(Long buildingId) {
+        String sql = "SELECT user_id FROM user_buildings WHERE building_id = ?";
+        List<Long> userIds = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, buildingId);
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    userIds.add(rs.getLong("user_id"));
+                }
+            }
+            return userIds;
+        } catch (SQLException e) {
+            throw new RepositoryException("Error obteniendo usuarios del edificio", e);
+        }
+    }
+
+    public List<Long> findAdminUserIdsByBuilding(Long buildingId) {
+        String sql = """
+                SELECT ub.user_id FROM user_buildings ub
+                JOIN users u ON u.id = ub.user_id
+                WHERE ub.building_id = ? AND u.role_id = 1
+                """;
+        List<Long> userIds = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, buildingId);
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    userIds.add(rs.getLong("user_id"));
+                }
+            }
+            return userIds;
+        } catch (SQLException e) {
+            throw new RepositoryException("Error obteniendo admins del edificio", e);
+        }
+    }
+
+    public List<Long> findUserIdsByUnitId(Long unitId) {
+        String sql = "SELECT id FROM users WHERE unit_id = ? AND status = 'ACTIVE'";
+        List<Long> userIds = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, unitId);
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    userIds.add(rs.getLong("id"));
+                }
+            }
+            return userIds;
+        } catch (SQLException e) {
+            throw new RepositoryException("Error obteniendo usuarios de la unidad", e);
+        }
+    }
+
+    public List<Long> findUserIdsByBuildingAndRoles(Long buildingId, List<Long> roleIds) {
+        if (roleIds == null || roleIds.isEmpty()) return new ArrayList<>();
+        StringBuilder sql = new StringBuilder(
+            "SELECT ub.user_id FROM user_buildings ub JOIN users u ON u.id = ub.user_id WHERE ub.building_id = ? AND u.role_id IN (");
+        for (int i = 0; i < roleIds.size(); i++) {
+            sql.append(i == 0 ? "?" : ",?");
+        }
+        sql.append(")");
+        List<Long> userIds = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql.toString())) {
+            statement.setLong(1, buildingId);
+            for (int i = 0; i < roleIds.size(); i++) {
+                statement.setLong(i + 2, roleIds.get(i));
+            }
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    userIds.add(rs.getLong("user_id"));
+                }
+            }
+            return userIds;
+        } catch (SQLException e) {
+            throw new RepositoryException("Error obteniendo usuarios por roles del edificio", e);
+        }
+    }
 }

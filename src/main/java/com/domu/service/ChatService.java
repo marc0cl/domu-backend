@@ -23,7 +23,7 @@ public class ChatService {
     private final UserRepository userRepository;
     private final BuildingRepository buildingRepository;
     private final MarketplaceStorageService storageService;
-    private final GcsStorageService gcsStorageService;
+    private final BoxStorageService boxStorageService;
 
     @Inject
     public ChatService(ChatRepository repository,
@@ -32,14 +32,14 @@ public class ChatService {
             UserRepository userRepository,
             BuildingRepository buildingRepository,
             MarketplaceStorageService storageService,
-            GcsStorageService gcsStorageService) {
+            BoxStorageService boxStorageService) {
         this.repository = repository;
         this.marketRepository = marketRepository;
         this.userBuildingRepository = userBuildingRepository;
         this.userRepository = userRepository;
         this.buildingRepository = buildingRepository;
         this.storageService = storageService;
-        this.gcsStorageService = gcsStorageService;
+        this.boxStorageService = boxStorageService;
     }
 
     public List<ChatRoomResponse> getMyRooms(Long userId, Long buildingId) {
@@ -55,24 +55,24 @@ public class ChatService {
             return room;
         }
         List<ChatRoomResponse.UserSummary> resolved = room.participants().stream()
-                .map(p -> ChatRoomResponse.UserSummary.builder()
-                        .id(p.id())
-                        .name(p.name())
-                        .photoUrl(UserMapper.resolveUrl(p.photoUrl(), gcsStorageService))
-                        .isTyping(p.isTyping())
-                        .build())
+                .map(p -> new ChatRoomResponse.UserSummary(
+                        p.id(),
+                        p.name(),
+                        UserMapper.resolveUrl(p.photoUrl(), boxStorageService),
+                        p.isTyping()
+                ))
                 .toList();
-        return ChatRoomResponse.builder()
-                .id(room.id())
-                .buildingId(room.buildingId())
-                .itemId(room.itemId())
-                .itemTitle(room.itemTitle())
-                .itemImageUrl(room.itemImageUrl())
-                .participants(resolved)
-                .lastMessage(room.lastMessage())
-                .createdAt(room.createdAt())
-                .lastMessageAt(room.lastMessageAt())
-                .build();
+        return new ChatRoomResponse(
+                room.id(),
+                room.buildingId(),
+                room.itemId(),
+                room.itemTitle(),
+                room.itemImageUrl(),
+                resolved,
+                room.lastMessage(),
+                room.createdAt(),
+                room.lastMessageAt()
+        );
     }
 
     public List<ChatMessageResponse> getMessages(Long roomId, Long userId, Long buildingId, int limit) {

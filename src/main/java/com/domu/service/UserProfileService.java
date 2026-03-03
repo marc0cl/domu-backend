@@ -21,18 +21,18 @@ public class UserProfileService {
     private final MarketRepository marketRepository;
     private final HousingUnitRepository housingUnitRepository;
     private final ChatRepository chatRepository;
-    private final GcsStorageService gcsStorageService;
+    private final BoxStorageService boxStorageService;
     private final MarketService marketService;
 
     @Inject
     public UserProfileService(UserRepository userRepository, MarketRepository marketRepository,
                               HousingUnitRepository housingUnitRepository, ChatRepository chatRepository,
-                              GcsStorageService gcsStorageService, MarketService marketService) {
+                              BoxStorageService boxStorageService, MarketService marketService) {
         this.userRepository = userRepository;
         this.marketRepository = marketRepository;
         this.housingUnitRepository = housingUnitRepository;
         this.chatRepository = chatRepository;
-        this.gcsStorageService = gcsStorageService;
+        this.boxStorageService = boxStorageService;
         this.marketService = marketService;
     }
 
@@ -54,15 +54,15 @@ public class UserProfileService {
                 .filter(i -> i.userId().equals(userId))
                 .toList();
 
-        return UserProfileResponse.builder()
-                .id(user.id())
-                .firstName(user.firstName())
-                .lastName(user.lastName())
-                .bio(user.bio())
-                .avatarUrl(UserMapper.resolveUrl(user.avatarBoxId(), gcsStorageService))
-                .unitIdentifier(unitIdentifier)
-                .activeChatRoomId(activeChatRoomId)
-                .itemsForSale(itemsForSale)
-                .build();
+        return new UserProfileResponse(
+                user.id(),
+                user.firstName(),
+                user.lastName(),
+                user.bio(),
+                UserMapper.resolveUrl(user.avatarBoxId(), boxStorageService),
+                unitIdentifier,
+                activeChatRoomId,
+                itemsForSale
+        );
     }
 }

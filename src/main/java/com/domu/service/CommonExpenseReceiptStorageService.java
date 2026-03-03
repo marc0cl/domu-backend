@@ -10,20 +10,20 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Handles storage for common expense receipts.
- * Delegates to GcsStorageService for actual cloud storage operations.
+ * Delegates to BoxStorageService for actual cloud storage operations.
  */
 public class CommonExpenseReceiptStorageService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CommonExpenseReceiptStorageService.class);
-    private final GcsStorageService gcs;
+    private final BoxStorageService box;
 
     @Inject
-    public CommonExpenseReceiptStorageService(GcsStorageService gcs) {
-        this.gcs = gcs;
+    public CommonExpenseReceiptStorageService(BoxStorageService box) {
+        this.box = box;
     }
 
     /**
-     * Uploads a receipt document to GCS.
+     * Uploads a receipt document to Box.
      */
     public CommonChargeReceiptUploadResult uploadReceipt(
             BuildingSummaryResponse building,
@@ -45,30 +45,29 @@ public class CommonExpenseReceiptStorageService {
 
         Long unitId = unit != null ? unit.id() : 0L;
         String fileName = buildFileName(chargeId, chargeDescription, document.fileName());
-        String path = gcs.receiptPath(building.id(), year, month, unitId, fileName);
+        String path = box.receiptPath(building.id(), year, month, unitId, fileName);
         String contentType = document.contentType() != null ? document.contentType() : "application/pdf";
 
-        gcs.upload(path, document.content(), contentType);
-        LOGGER.info("Receipt uploaded: {}", path);
+        String fileId = box.upload(path, document.content(), contentType);
+        LOGGER.info("Receipt uploaded to Box: fileId={}", fileId);
 
         String folderPath = String.format("receipts/%d/%d-%02d/%d", building.id(), year, month, unitId);
-        return new CommonChargeReceiptUploadResult(folderPath, path, fileName, contentType);
+        return new CommonChargeReceiptUploadResult(folderPath, fileId, fileName, contentType);
     }
 
     /**
-     * Downloads a receipt from GCS.
+     * Downloads a receipt from Box.
      */
     public DownloadedReceipt downloadReceipt(String fileId) {
         if (fileId == null || fileId.isBlank()) {
             throw new ValidationException("No hay boleta registrada");
         }
-        byte[] content = gcs.download(fileId);
+        byte[] content = box.download(fileId);
         if (content == null) {
             throw new ValidationException("No se encontró la boleta en el almacenamiento");
         }
 
-        String fileName = fileId.contains("/") ? fileId.substring(fileId.lastIndexOf('/') + 1) : fileId;
-        return new DownloadedReceipt(fileName, content);
+        return new DownloadedReceipt("boleta-" + fileId, content);
     }
 
     private String buildFileName(Long chargeId, String description, String originalFileName) {

@@ -28,7 +28,7 @@ public class UserService {
     private final StaffRepository staffRepository;
     private final PasswordHasher passwordHasher;
     private final MarketplaceStorageService storageService;
-    private final GcsStorageService gcsStorageService;
+    private final BoxStorageService boxStorageService;
 
     @Inject
     public UserService(UserRepository userRepository, UserBuildingRepository userBuildingRepository,
@@ -37,7 +37,7 @@ public class UserService {
             StaffRepository staffRepository,
             PasswordHasher passwordHasher,
             MarketplaceStorageService storageService,
-            GcsStorageService gcsStorageService) {
+            BoxStorageService boxStorageService) {
         this.userRepository = userRepository;
         this.userBuildingRepository = userBuildingRepository;
         this.userConfirmationRepository = userConfirmationRepository;
@@ -45,47 +45,39 @@ public class UserService {
         this.staffRepository = staffRepository;
         this.passwordHasher = passwordHasher;
         this.storageService = storageService;
-        this.gcsStorageService = gcsStorageService;
+        this.boxStorageService = boxStorageService;
     }
 
     public void updateAvatar(User user, String fileName, byte[] content) {
-        // Generate the new path first (before uploading)
-        String ext = com.domu.service.ImageOptimizer.outputExtension();
-        String newPath = gcsStorageService.profileAvatarPath(user.id(), ext);
-        
-        // Delete old avatar from GCS if it exists and is different from the new path
-        String oldAvatarPath = user.avatarBoxId();
-        if (oldAvatarPath != null && !oldAvatarPath.isBlank() && !oldAvatarPath.equals(newPath)) {
+        // Delete old avatar from Box if it exists
+        String oldFileId = user.avatarBoxId();
+        if (oldFileId != null && !oldFileId.isBlank() && !oldFileId.startsWith("http")) {
             try {
-                gcsStorageService.delete(oldAvatarPath);
+                boxStorageService.delete(oldFileId);
             } catch (Exception e) {
-                // Log but don't fail if deletion fails (image might not exist)
+                // Log but don't fail if deletion fails
             }
         }
-        
-        // Upload the new image (this will overwrite if path is the same)
-        String uploadedPath = storageService.uploadProfileImage(user.id(), fileName, content);
-        userRepository.updateAvatar(user.id(), uploadedPath);
+
+        // Upload the new image — returns Box file ID
+        String fileId = storageService.uploadProfileImage(user.id(), fileName, content);
+        userRepository.updateAvatar(user.id(), fileId);
     }
 
     public void updatePrivacyAvatar(User user, String fileName, byte[] content) {
-        // Generate the new path first (before uploading)
-        String ext = com.domu.service.ImageOptimizer.outputExtension();
-        String newPath = gcsStorageService.profilePrivacyAvatarPath(user.id(), ext);
-        
-        // Delete old privacy avatar from GCS if it exists and is different from the new path
-        String oldPrivacyAvatarPath = user.privacyAvatarBoxId();
-        if (oldPrivacyAvatarPath != null && !oldPrivacyAvatarPath.isBlank() && !oldPrivacyAvatarPath.equals(newPath)) {
+        // Delete old privacy avatar from Box if it exists
+        String oldFileId = user.privacyAvatarBoxId();
+        if (oldFileId != null && !oldFileId.isBlank() && !oldFileId.startsWith("http")) {
             try {
-                gcsStorageService.delete(oldPrivacyAvatarPath);
+                boxStorageService.delete(oldFileId);
             } catch (Exception e) {
-                // Log but don't fail if deletion fails (image might not exist)
+                // Log but don't fail if deletion fails
             }
         }
-        
-        // Upload the new image (this will overwrite if path is the same)
-        String uploadedPath = storageService.uploadPrivacyImage(user.id(), fileName, content);
-        userRepository.updatePrivacyAvatar(user.id(), uploadedPath);
+
+        // Upload the new image — returns Box file ID
+        String fileId = storageService.uploadPrivacyImage(user.id(), fileName, content);
+        userRepository.updatePrivacyAvatar(user.id(), fileId);
     }
 
     public User adminCreateUser(

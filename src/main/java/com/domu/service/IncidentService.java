@@ -1,6 +1,7 @@
 package com.domu.service;
 
 import com.domu.database.IncidentRepository;
+import com.domu.domain.NotificationType;
 import com.domu.domain.core.User;
 import com.domu.dto.IncidentListResponse;
 import com.domu.dto.IncidentRequest;
@@ -19,10 +20,13 @@ import java.util.Objects;
 public class IncidentService {
 
     private final IncidentRepository incidentRepository;
+    private final NotificationService notificationService;
 
     @Inject
-    public IncidentService(IncidentRepository incidentRepository) {
+    public IncidentService(IncidentRepository incidentRepository,
+                           NotificationService notificationService) {
         this.incidentRepository = incidentRepository;
+        this.notificationService = notificationService;
     }
 
     /**
@@ -55,6 +59,12 @@ public class IncidentService {
                 null, // assignedToUserId initially null
                 createdAt,
                 createdAt));
+
+        notificationService.notifyBuildingUsersByRoles(buildingId, List.of(1L, 3L),
+                NotificationType.INCIDENT_CREATED,
+                "Nuevo incidente: " + saved.title(),
+                "Se ha reportado un nuevo incidente en el edificio.",
+                "{\"incidentId\":" + saved.id() + "}");
 
         return toResponse(saved);
     }
@@ -117,6 +127,13 @@ public class IncidentService {
         ensureIncidentInBuilding(existing, buildingId);
         IncidentRepository.IncidentRow updated = incidentRepository.updateStatus(existing.id(), status,
                 LocalDateTime.now());
+
+        notificationService.notify(buildingId, existing.userId(),
+                NotificationType.INCIDENT_STATUS_CHANGED,
+                "Tu incidente fue actualizado a " + status,
+                "El incidente \"" + existing.title() + "\" cambio de estado.",
+                "{\"incidentId\":" + incidentId + ",\"status\":\"" + status + "\"}");
+
         return toResponse(updated);
     }
 
@@ -130,6 +147,15 @@ public class IncidentService {
         ensureIncidentInBuilding(existing, buildingId);
         IncidentRepository.IncidentRow updated = incidentRepository.updateAssignment(existing.id(), assignedToUserId,
                 LocalDateTime.now());
+
+        if (assignedToUserId != null) {
+            notificationService.notify(buildingId, assignedToUserId,
+                    NotificationType.INCIDENT_ASSIGNED,
+                    "Te asignaron un incidente: " + existing.title(),
+                    "Se te ha asignado el incidente \"" + existing.title() + "\".",
+                    "{\"incidentId\":" + incidentId + "}");
+        }
+
         return toResponse(updated);
     }
 

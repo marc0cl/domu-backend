@@ -3,6 +3,7 @@ package com.domu.service;
 import com.domu.database.BuildingRepository;
 import com.domu.database.TaskRepository;
 import com.domu.database.UserBuildingRepository;
+import com.domu.domain.NotificationType;
 import com.domu.domain.core.User;
 import com.domu.dto.TaskRequest;
 import com.google.inject.Inject;
@@ -17,14 +18,17 @@ public class TaskService {
     private final TaskRepository repository;
     private final UserBuildingRepository userBuildingRepository;
     private final BuildingRepository buildingRepository;
+    private final NotificationService notificationService;
 
     @Inject
     public TaskService(TaskRepository repository,
             UserBuildingRepository userBuildingRepository,
-            BuildingRepository buildingRepository) {
+            BuildingRepository buildingRepository,
+            NotificationService notificationService) {
         this.repository = repository;
         this.userBuildingRepository = userBuildingRepository;
         this.buildingRepository = buildingRepository;
+        this.notificationService = notificationService;
     }
 
     public List<TaskRepository.TaskResponse> listByBuilding(User user, Long buildingId) {
@@ -47,7 +51,15 @@ public class TaskService {
             repository.validateStaffBelongsToBuilding(selectedBuildingId, assigneeIds);
         }
         
-        return repository.insert(normalized, user != null ? user.id() : null);
+        TaskRepository.TaskResponse created = repository.insert(normalized, user != null ? user.id() : null);
+
+        notificationService.notifyBuildingUsersByRoles(selectedBuildingId, List.of(1L, 3L),
+                NotificationType.TASK_ASSIGNED,
+                "Nueva tarea: " + normalized.title(),
+                "Se ha creado una nueva tarea.",
+                "{\"taskId\":" + created.id() + "}");
+
+        return created;
     }
 
     public TaskRepository.TaskResponse update(User user, Long selectedBuildingId, Long id, TaskRequest request) {
@@ -72,7 +84,17 @@ public class TaskService {
             repository.validateStaffBelongsToBuilding(selectedBuildingId, assigneeIds);
         }
         
-        return repository.update(id, normalized);
+        TaskRepository.TaskResponse updated = repository.update(id, normalized);
+
+        if ("COMPLETED".equalsIgnoreCase(normalized.status())) {
+            notificationService.notifyBuildingUsersByRoles(selectedBuildingId, List.of(1L),
+                    NotificationType.TASK_COMPLETED,
+                    "Tarea completada: " + normalized.title(),
+                    "La tarea \"" + normalized.title() + "\" ha sido completada.",
+                    "{\"taskId\":" + id + "}");
+        }
+
+        return updated;
     }
 
     public void delete(User user, Long selectedBuildingId, Long id) {

@@ -5,6 +5,7 @@ import com.domu.security.*;
 import com.domu.service.*;
 import com.domu.web.WebServer;
 import com.domu.web.ChatWebSocketHandler;
+import com.domu.web.NotificationWebSocketHandler;
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
@@ -15,6 +16,8 @@ import com.zaxxer.hikari.HikariDataSource;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+
+import org.flywaydb.core.Flyway;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -61,12 +64,15 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(ChatRequestService.class).in(Scopes.SINGLETON);
         bind(UserProfileService.class).in(Scopes.SINGLETON);
         bind(ForumService.class).in(Scopes.SINGLETON);
-        bind(GcsStorageService.class).in(Scopes.SINGLETON);
+        bind(BoxStorageService.class).in(Scopes.SINGLETON);
         bind(MarketplaceStorageService.class).in(Scopes.SINGLETON);
         bind(ParcelService.class).in(Scopes.SINGLETON);
         bind(TaskService.class).in(Scopes.SINGLETON);
         bind(StaffService.class).in(Scopes.SINGLETON);
         bind(LibraryService.class).in(Scopes.SINGLETON);
+        bind(NotificationService.class).in(Scopes.SINGLETON);
+        bind(ProviderService.class).in(Scopes.SINGLETON);
+        bind(ServiceOrderService.class).in(Scopes.SINGLETON);
 
         bind(UserRepository.class).in(Scopes.SINGLETON);
         bind(ForumRepository.class).in(Scopes.SINGLETON);
@@ -88,8 +94,13 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(TaskRepository.class).in(Scopes.SINGLETON);
         bind(StaffRepository.class).in(Scopes.SINGLETON);
         bind(LibraryRepository.class).in(Scopes.SINGLETON);
+        bind(NotificationRepository.class).in(Scopes.SINGLETON);
+        bind(ProviderRepository.class).in(Scopes.SINGLETON);
+        bind(ServiceOrderRepository.class).in(Scopes.SINGLETON);
+        bind(QuotationRepository.class).in(Scopes.SINGLETON);
 
         bind(ChatWebSocketHandler.class).in(Scopes.SINGLETON);
+        bind(NotificationWebSocketHandler.class).in(Scopes.SINGLETON);
         bind(AuthenticationHandler.class).in(Scopes.SINGLETON);
         bind(PasswordHasher.class).to(BCryptPasswordHasher.class).in(Scopes.SINGLETON);
     }
@@ -141,48 +152,13 @@ public class DependencyInjectionModule extends AbstractModule {
     @Singleton
     HikariDataSource dataSource(final AppConfig config) {
         HikariDataSource ds = DataSourceFactory.create(config);
-        runPendingMigrations(ds);
+        Flyway.configure()
+                .dataSource(ds)
+                .baselineOnMigrate(true)
+                .baselineVersion("034")
+                .load()
+                .migrate();
         return ds;
-    }
-
-    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(DependencyInjectionModule.class);
-
-    private static void runPendingMigrations(HikariDataSource ds) {
-        String[] migrations = {
-            "CREATE TABLE IF NOT EXISTS password_reset_tokens (id BIGINT AUTO_INCREMENT PRIMARY KEY, user_id BIGINT NOT NULL, token VARCHAR(100) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, used_at DATETIME NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, CONSTRAINT fk_password_reset_user FOREIGN KEY (user_id) REFERENCES users(id))",
-            "CREATE INDEX idx_password_reset_tokens_token ON password_reset_tokens (token)",
-            "ALTER TABLE users ADD COLUMN display_name VARCHAR(100) NULL",
-            "ALTER TABLE market_item MODIFY COLUMN main_image_url TEXT",
-            "ALTER TABLE market_item_image MODIFY COLUMN url TEXT",
-            "ALTER TABLE market_item_image MODIFY COLUMN box_file_id TEXT",
-            "ALTER TABLE amenities MODIFY COLUMN image_url TEXT",
-            "ALTER TABLE users MODIFY COLUMN avatar_box_id TEXT",
-            "ALTER TABLE users MODIFY COLUMN privacy_avatar_box_id TEXT",
-            "ALTER TABLE chat_participant ADD COLUMN hidden_at TIMESTAMP NULL DEFAULT NULL",
-            "ALTER TABLE buildings ADD COLUMN building_type VARCHAR(20) NULL",
-            "ALTER TABLE buildings ADD COLUMN house_units_count INT NULL",
-            "ALTER TABLE buildings ADD COLUMN apartment_units_count INT NULL",
-            "ALTER TABLE building_requests ADD COLUMN building_type VARCHAR(20) NULL",
-            "ALTER TABLE building_requests ADD COLUMN house_units_count INT NULL",
-            "ALTER TABLE building_requests ADD COLUMN apartment_units_count INT NULL"
-        };
-        try (java.sql.Connection conn = ds.getConnection()) {
-            for (String sql : migrations) {
-                try (java.sql.Statement stmt = conn.createStatement()) {
-                    stmt.execute(sql);
-                    LOG.info("Migration OK: {}", sql);
-                } catch (java.sql.SQLException e) {
-                    // Error code 1060 = Duplicate column name, 1061 = Duplicate key name — safe to ignore
-                    if (e.getErrorCode() == 1060 || e.getErrorCode() == 1061) {
-                        LOG.info("Migration already applied, skipping: {}", sql);
-                    } else {
-                        LOG.warn("Migration warning: {} — {}", sql, e.getMessage());
-                    }
-                }
-            }
-        } catch (java.sql.SQLException e) {
-            LOG.error("Error running pending migrations", e);
-        }
     }
 
     @Provides

@@ -1,10 +1,8 @@
 package com.domu.dto;
 
-import lombok.Builder;
 import java.time.LocalDateTime;
 import java.util.List;
 
-@Builder
 public record MarketItemResponse(
     Long id,
     Long userId,
@@ -22,7 +20,6 @@ public record MarketItemResponse(
     List<String> imageUrls,
     LocalDateTime createdAt
 ) {
-    @Builder
     public record ImageInfo(
         Long id,
         String url,

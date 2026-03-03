@@ -139,21 +139,21 @@ public class ChatRequestRepository {
     }
 
     private ChatRequestResponse mapResponse(ResultSet rs) throws SQLException {
-        return ChatRequestResponse.builder()
-                .id(rs.getLong("id"))
-                .senderId(rs.getLong("sender_id"))
-                .senderName(rs.getString("sender_first") + " " + rs.getString("sender_last"))
-                .senderUnitNumber(rs.getString("sender_unit"))
-                .senderPrivacyPhoto(rs.getString("sender_photo"))
-                .receiverId(rs.getLong("receiver_id"))
-                .receiverUnitNumber(rs.getString("receiver_unit"))
-                .receiverPrivacyPhoto(rs.getString("receiver_photo"))
-                .buildingId(rs.getLong("building_id"))
-                .itemId(rs.getObject("item_id") != null ? rs.getLong("item_id") : null)
-                .itemTitle(rs.getString("item_title"))
-                .status(rs.getString("status"))
-                .initialMessage(rs.getString("initial_message"))
-                .createdAt(rs.getTimestamp("created_at").toLocalDateTime())
-                .build();
+        return new ChatRequestResponse(
+                rs.getLong("id"),
+                rs.getLong("sender_id"),
+                rs.getString("sender_first") + " " + rs.getString("sender_last"),
+                rs.getLong("receiver_id"),
+                rs.getLong("building_id"),
+                rs.getObject("item_id") != null ? rs.getLong("item_id") : null,
+                rs.getString("item_title"),
+                rs.getString("status"),
+                rs.getString("initial_message"),
+                rs.getString("sender_unit"),
+                rs.getString("sender_photo"),
+                rs.getString("receiver_unit"),
+                rs.getString("receiver_photo"),
+                rs.getTimestamp("created_at").toLocalDateTime()
+        );
     }
 }
