@@ -35,13 +35,13 @@ public class HousingUnitRepository {
         // Verificar si las columnas de auditoría existen
         boolean hasAuditColumns = checkAuditColumnsExist();
         String sql = hasAuditColumns ? """
-                SELECT id, building_id, number, tower, floor, aliquot_percentage,
+                SELECT id, building_id, number, unit_type, tower, floor, aliquot_percentage,
                        square_meters, status, created_by_user_id, created_at, updated_at
                 FROM housing_units
                 WHERE building_id = ? AND status != 'DELETED'
                 ORDER BY floor, number
                 """ : """
-                SELECT id, building_id, number, tower, floor, aliquot_percentage,
+                SELECT id, building_id, number, unit_type, tower, floor, aliquot_percentage,
                        square_meters, status, NULL as created_by_user_id, NULL as created_at, NULL as updated_at
                 FROM housing_units
                 WHERE building_id = ? AND (status IS NULL OR status != 'DELETED')
@@ -68,12 +68,12 @@ public class HousingUnitRepository {
     public Optional<HousingUnit> findById(Long id) {
         boolean hasAuditColumns = checkAuditColumnsExist();
         String sql = hasAuditColumns ? """
-                SELECT id, building_id, number, tower, floor, aliquot_percentage,
+                SELECT id, building_id, number, unit_type, tower, floor, aliquot_percentage,
                        square_meters, status, created_by_user_id, created_at, updated_at
                 FROM housing_units
                 WHERE id = ?
                 """ : """
-                SELECT id, building_id, number, tower, floor, aliquot_percentage,
+                SELECT id, building_id, number, unit_type, tower, floor, aliquot_percentage,
                        square_meters, status, NULL as created_by_user_id, NULL as created_at, NULL as updated_at
                 FROM housing_units
                 WHERE id = ?
@@ -99,40 +99,49 @@ public class HousingUnitRepository {
         boolean hasAuditColumns = checkAuditColumnsExist();
         String sql = hasAuditColumns ? """
                 INSERT INTO housing_units
-                (building_id, number, tower, floor, aliquot_percentage, square_meters,
+                (building_id, number, unit_type, tower, floor, aliquot_percentage, square_meters,
                  status, created_by_user_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
                 """ : """
                 INSERT INTO housing_units
-                (building_id, number, tower, floor, aliquot_percentage, square_meters, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (building_id, number, unit_type, tower, floor, aliquot_percentage, square_meters, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             statement.setLong(1, unit.buildingId());
             statement.setString(2, unit.number());
-            statement.setString(3, unit.tower());
-            statement.setString(4, unit.floor());
-
-            if (unit.aliquotPercentage() != null) {
-                statement.setBigDecimal(5, unit.aliquotPercentage());
+            statement.setString(3, unit.unitType() != null ? unit.unitType() : "DEPARTAMENTO");
+            if (unit.tower() != null && !unit.tower().isBlank()) {
+                statement.setString(4, unit.tower());
             } else {
-                statement.setNull(5, java.sql.Types.DECIMAL);
+                statement.setNull(4, java.sql.Types.VARCHAR);
+            }
+            if (unit.floor() != null && !unit.floor().isBlank()) {
+                statement.setString(5, unit.floor());
+            } else {
+                statement.setNull(5, java.sql.Types.VARCHAR);
             }
 
-            if (unit.squareMeters() != null) {
-                statement.setBigDecimal(6, unit.squareMeters());
+            if (unit.aliquotPercentage() != null) {
+                statement.setBigDecimal(6, unit.aliquotPercentage());
             } else {
                 statement.setNull(6, java.sql.Types.DECIMAL);
             }
 
-            statement.setString(7, unit.status() != null ? unit.status() : "ACTIVE");
+            if (unit.squareMeters() != null) {
+                statement.setBigDecimal(7, unit.squareMeters());
+            } else {
+                statement.setNull(7, java.sql.Types.DECIMAL);
+            }
+
+            statement.setString(8, unit.status() != null ? unit.status() : "ACTIVE");
 
             if (hasAuditColumns) {
                 if (unit.createdByUserId() != null) {
-                    statement.setLong(8, unit.createdByUserId());
+                    statement.setLong(9, unit.createdByUserId());
                 } else {
-                    statement.setNull(8, java.sql.Types.BIGINT);
+                    statement.setNull(9, java.sql.Types.BIGINT);
                 }
             }
 
@@ -154,31 +163,46 @@ public class HousingUnitRepository {
      * Actualizar unidad existente
      */
     public HousingUnit update(HousingUnit unit) {
-        String sql = """
+        boolean hasAuditColumns = checkAuditColumnsExist();
+        String sql = hasAuditColumns ? """
                 UPDATE housing_units
-                SET number = ?, tower = ?, floor = ?, aliquot_percentage = ?,
+                SET number = ?, unit_type = ?, tower = ?, floor = ?, aliquot_percentage = ?,
                     square_meters = ?, updated_at = NOW()
+                WHERE id = ?
+                """ : """
+                UPDATE housing_units
+                SET number = ?, unit_type = ?, tower = ?, floor = ?, aliquot_percentage = ?,
+                    square_meters = ?
                 WHERE id = ?
                 """;
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, unit.number());
-            statement.setString(2, unit.tower());
-            statement.setString(3, unit.floor());
-
-            if (unit.aliquotPercentage() != null) {
-                statement.setBigDecimal(4, unit.aliquotPercentage());
+            statement.setString(2, unit.unitType() != null ? unit.unitType() : "DEPARTAMENTO");
+            if (unit.tower() != null && !unit.tower().isBlank()) {
+                statement.setString(3, unit.tower());
             } else {
-                statement.setNull(4, java.sql.Types.DECIMAL);
+                statement.setNull(3, java.sql.Types.VARCHAR);
+            }
+            if (unit.floor() != null && !unit.floor().isBlank()) {
+                statement.setString(4, unit.floor());
+            } else {
+                statement.setNull(4, java.sql.Types.VARCHAR);
             }
 
-            if (unit.squareMeters() != null) {
-                statement.setBigDecimal(5, unit.squareMeters());
+            if (unit.aliquotPercentage() != null) {
+                statement.setBigDecimal(5, unit.aliquotPercentage());
             } else {
                 statement.setNull(5, java.sql.Types.DECIMAL);
             }
 
-            statement.setLong(6, unit.id());
+            if (unit.squareMeters() != null) {
+                statement.setBigDecimal(6, unit.squareMeters());
+            } else {
+                statement.setNull(6, java.sql.Types.DECIMAL);
+            }
+
+            statement.setLong(7, unit.id());
 
             int updated = statement.executeUpdate();
             if (updated == 0) {
@@ -195,7 +219,10 @@ public class HousingUnitRepository {
      * Soft delete - cambiar status a DELETED
      */
     public void softDelete(Long id) {
-        String sql = "UPDATE housing_units SET status = 'DELETED', updated_at = NOW() WHERE id = ?";
+        boolean hasAuditColumns = checkAuditColumnsExist();
+        String sql = hasAuditColumns
+                ? "UPDATE housing_units SET status = 'DELETED', updated_at = NOW() WHERE id = ?"
+                : "UPDATE housing_units SET status = 'DELETED' WHERE id = ?";
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, id);
@@ -214,12 +241,12 @@ public class HousingUnitRepository {
     public Optional<HousingUnit> findByBuildingIdAndNumber(Long buildingId, String number) {
         boolean hasAuditColumns = checkAuditColumnsExist();
         String sql = hasAuditColumns ? """
-                SELECT id, building_id, number, tower, floor, aliquot_percentage,
+                SELECT id, building_id, number, unit_type, tower, floor, aliquot_percentage,
                        square_meters, status, created_by_user_id, created_at, updated_at
                 FROM housing_units
                 WHERE building_id = ? AND number = ? AND status != 'DELETED'
                 """ : """
-                SELECT id, building_id, number, tower, floor, aliquot_percentage,
+                SELECT id, building_id, number, unit_type, tower, floor, aliquot_percentage,
                        square_meters, status, NULL as created_by_user_id, NULL as created_at, NULL as updated_at
                 FROM housing_units
                 WHERE building_id = ? AND number = ? AND (status IS NULL OR status != 'DELETED')
@@ -296,7 +323,7 @@ public class HousingUnitRepository {
     public List<HousingUnitWithResidents> findByBuildingIdWithResidents(Long buildingId) {
         boolean hasAuditColumns = checkAuditColumnsExist();
         String sql = hasAuditColumns ? """
-                SELECT hu.id, hu.building_id, hu.number, hu.tower, hu.floor,
+                SELECT hu.id, hu.building_id, hu.number, hu.unit_type, hu.tower, hu.floor,
                        hu.aliquot_percentage, hu.square_meters, hu.status,
                        hu.created_by_user_id, hu.created_at, hu.updated_at,
                        CONCAT(creator.first_name, ' ', creator.last_name) as creator_name,
@@ -308,7 +335,7 @@ public class HousingUnitRepository {
                 WHERE hu.building_id = ? AND hu.status != 'DELETED'
                 ORDER BY hu.floor, hu.number, u.first_name
                 """ : """
-                SELECT hu.id, hu.building_id, hu.number, hu.tower, hu.floor,
+                SELECT hu.id, hu.building_id, hu.number, hu.unit_type, hu.tower, hu.floor,
                        hu.aliquot_percentage, hu.square_meters, hu.status,
                        NULL as created_by_user_id, NULL as created_at, NULL as updated_at,
                        NULL as creator_name,
@@ -343,6 +370,7 @@ public class HousingUnitRepository {
                                 unitId,
                                 rs.getLong("building_id"),
                                 rs.getString("number"),
+                                rs.getString("unit_type"),
                                 rs.getString("tower"),
                                 rs.getString("floor"),
                                 rs.getBigDecimal("aliquot_percentage"),
@@ -378,6 +406,7 @@ public class HousingUnitRepository {
                             currentUnit.id(),
                             currentUnit.buildingId(),
                             currentUnit.number(),
+                            currentUnit.unitType(),
                             currentUnit.tower(),
                             currentUnit.floor(),
                             currentUnit.aliquotPercentage(),
@@ -403,7 +432,7 @@ public class HousingUnitRepository {
     public Optional<HousingUnitResponse> findByIdWithDetails(Long id) {
         boolean hasAuditColumns = checkAuditColumnsExist();
         String sql = hasAuditColumns ? """
-                SELECT hu.id, hu.building_id, hu.number, hu.tower, hu.floor,
+                SELECT hu.id, hu.building_id, hu.number, hu.unit_type, hu.tower, hu.floor,
                        hu.aliquot_percentage, hu.square_meters, hu.status,
                        hu.created_by_user_id, hu.created_at, hu.updated_at,
                        CONCAT(creator.first_name, ' ', creator.last_name) as creator_name,
@@ -412,12 +441,12 @@ public class HousingUnitRepository {
                 LEFT JOIN users creator ON creator.id = hu.created_by_user_id
                 LEFT JOIN users u ON u.unit_id = hu.id AND u.status = 'ACTIVE'
                 WHERE hu.id = ?
-                GROUP BY hu.id, hu.building_id, hu.number, hu.tower, hu.floor,
+                GROUP BY hu.id, hu.building_id, hu.number, hu.unit_type, hu.tower, hu.floor,
                          hu.aliquot_percentage, hu.square_meters, hu.status,
                          hu.created_by_user_id, hu.created_at, hu.updated_at,
                          creator.first_name, creator.last_name
                 """ : """
-                SELECT hu.id, hu.building_id, hu.number, hu.tower, hu.floor,
+                SELECT hu.id, hu.building_id, hu.number, hu.unit_type, hu.tower, hu.floor,
                        hu.aliquot_percentage, hu.square_meters, hu.status,
                        NULL as created_by_user_id, NULL as created_at, NULL as updated_at,
                        NULL as creator_name,
@@ -425,7 +454,7 @@ public class HousingUnitRepository {
                 FROM housing_units hu
                 LEFT JOIN users u ON u.unit_id = hu.id AND u.status = 'ACTIVE'
                 WHERE hu.id = ?
-                GROUP BY hu.id, hu.building_id, hu.number, hu.tower, hu.floor,
+                GROUP BY hu.id, hu.building_id, hu.number, hu.unit_type, hu.tower, hu.floor,
                          hu.aliquot_percentage, hu.square_meters, hu.status
                 """;
 
@@ -438,6 +467,7 @@ public class HousingUnitRepository {
                             rs.getLong("id"),
                             rs.getLong("building_id"),
                             rs.getString("number"),
+                            rs.getString("unit_type"),
                             rs.getString("tower"),
                             rs.getString("floor"),
                             rs.getBigDecimal("aliquot_percentage"),
@@ -463,6 +493,7 @@ public class HousingUnitRepository {
                 rs.getLong("id"),
                 rs.getLong("building_id"),
                 rs.getString("number"),
+                rs.getString("unit_type"),
                 rs.getString("tower"),
                 rs.getString("floor"),
                 rs.getBigDecimal("aliquot_percentage"),

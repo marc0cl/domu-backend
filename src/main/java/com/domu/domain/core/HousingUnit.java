@@ -8,6 +8,7 @@ public record HousingUnit(
         Long id,
         Long buildingId,
         String number,
+        String unitType,
         String tower,
         String floor,
         BigDecimal aliquotPercentage,

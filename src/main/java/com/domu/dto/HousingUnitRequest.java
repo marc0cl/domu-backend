@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 
 public class HousingUnitRequest {
     private String number;
+    private String unitType;
     private String tower;
     private String floor;
     private BigDecimal aliquotPercentage;
@@ -12,9 +13,10 @@ public class HousingUnitRequest {
     public HousingUnitRequest() {
     }
 
-    public HousingUnitRequest(String number, String tower, String floor, BigDecimal aliquotPercentage,
+    public HousingUnitRequest(String number, String unitType, String tower, String floor, BigDecimal aliquotPercentage,
             BigDecimal squareMeters) {
         this.number = number;
+        this.unitType = unitType;
         this.tower = tower;
         this.floor = floor;
         this.aliquotPercentage = aliquotPercentage;
@@ -27,6 +29,14 @@ public class HousingUnitRequest {
 
     public void setNumber(String number) {
         this.number = number;
+    }
+
+    public String getUnitType() {
+        return unitType;
+    }
+
+    public void setUnitType(String unitType) {
+        this.unitType = unitType;
     }
 
     public String getTower() {

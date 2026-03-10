@@ -32,19 +32,22 @@ public class PollService {
     private final BuildingRepository buildingRepository;
     private final UserBuildingRepository userBuildingRepository;
     private final NotificationService notificationService;
+    private final PermissionService permissionService;
 
     @Inject
     public PollService(PollRepository pollRepository, BuildingRepository buildingRepository,
             UserBuildingRepository userBuildingRepository,
-            NotificationService notificationService) {
+            NotificationService notificationService,
+            PermissionService permissionService) {
         this.pollRepository = pollRepository;
         this.buildingRepository = buildingRepository;
         this.userBuildingRepository = userBuildingRepository;
         this.notificationService = notificationService;
+        this.permissionService = permissionService;
     }
 
     public PollResponse create(User user, Long selectedBuildingId, CreatePollRequest request) {
-        ensureAdminOrConcierge(user);
+        permissionService.requirePermission(user, "VOTES_CREATE");
         validateCreateRequest(request);
         Long buildingId = resolveBuildingId(user, request.getBuildingId(), selectedBuildingId);
         LocalDateTime closesAt = request.getClosesAt();
@@ -159,7 +162,7 @@ public class PollService {
     }
 
     public PollResponse close(User user, Long selectedBuildingId, Long pollId) {
-        ensureAdminOrConcierge(user);
+        permissionService.requirePermission(user, "VOTES_CREATE");
         PollRow poll = pollRepository.findById(pollId)
                 .orElseThrow(() -> new ValidationException("Votación no encontrada"));
         ensureSameBuilding(user, selectedBuildingId, poll.buildingId());
@@ -260,12 +263,6 @@ public class PollService {
         }
     }
 
-    private void ensureAdminOrConcierge(User user) {
-        ensureAuthenticated(user);
-        if (user.roleId() == null || !(Objects.equals(user.roleId(), 1L) || Objects.equals(user.roleId(), 3L))) {
-            throw new UnauthorizedResponse("Solo administradores o conserjes pueden realizar esta acción");
-        }
-    }
 
     private Long resolveBuildingId(User user, Long requestBuildingId, Long selectedBuildingId) {
         if (selectedBuildingId != null) {

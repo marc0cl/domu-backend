@@ -2,6 +2,7 @@ package com.domu.dto;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record UserResponse(
         Long id,
@@ -20,6 +21,7 @@ public record UserResponse(
         String privacyAvatarBoxId,
         String displayName,
         Long activeBuildingId,
-        java.util.List<BuildingSummaryResponse> buildings
+        List<BuildingSummaryResponse> buildings,
+        List<String> permissions
 ) {
 }

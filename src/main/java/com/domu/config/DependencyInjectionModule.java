@@ -73,8 +73,10 @@ public class DependencyInjectionModule extends AbstractModule {
         bind(NotificationService.class).in(Scopes.SINGLETON);
         bind(ProviderService.class).in(Scopes.SINGLETON);
         bind(ServiceOrderService.class).in(Scopes.SINGLETON);
+        bind(PermissionService.class).in(Scopes.SINGLETON);
 
         bind(UserRepository.class).in(Scopes.SINGLETON);
+        bind(RoleRepository.class).in(Scopes.SINGLETON);
         bind(ForumRepository.class).in(Scopes.SINGLETON);
         bind(CommonExpenseRepository.class).in(Scopes.SINGLETON);
         bind(BuildingRepository.class).in(Scopes.SINGLETON);

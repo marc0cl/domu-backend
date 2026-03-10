@@ -61,7 +61,7 @@ public class ForumService {
         ForumThreadDto thread = forumRepository.findById(threadId)
             .orElseThrow(() -> new ValidationException("Publicación no encontrada"));
 
-        // Permission check: Author OR Admin
+        // RBAC check: author or admin can update the thread
         boolean isAdmin = user.roleId() != null && user.roleId() == 1L;
         if (!thread.authorId().equals(user.id()) && !isAdmin) {
             throw new ValidationException("No tienes permiso para editar esta publicación");
@@ -83,7 +83,7 @@ public class ForumService {
         ForumThreadDto thread = forumRepository.findById(threadId)
             .orElseThrow(() -> new ValidationException("Publicación no encontrada"));
 
-        // Permission check: Author OR Admin
+        // RBAC check: author or admin can delete the thread
         boolean isAdmin = user.roleId() != null && user.roleId() == 1L;
         if (!thread.authorId().equals(user.id()) && !isAdmin) {
             throw new ValidationException("No tienes permiso para eliminar esta publicación");

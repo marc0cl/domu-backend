@@ -25,6 +25,7 @@ public record ResidentResponse(
             case 2 -> "Residente";
             case 3 -> "Conserje";
             case 4 -> "Personal";
+            case 5 -> "Comité";
             default -> "Usuario";
         };
         return new ResidentResponse(

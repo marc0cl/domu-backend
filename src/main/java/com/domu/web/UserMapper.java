@@ -5,6 +5,7 @@ import com.domu.dto.BuildingSummaryResponse;
 import com.domu.dto.UserResponse;
 import com.domu.security.AuthenticationHandler;
 import com.domu.service.BoxStorageService;
+import com.domu.service.PermissionService;
 
 import io.javalin.http.Context;
 
@@ -15,7 +16,8 @@ public final class UserMapper {
     private UserMapper() {
     }
 
-    public static UserResponse toResponse(User user, List<BuildingSummaryResponse> buildings, Long activeBuildingId, BoxStorageService box) {
+    public static UserResponse toResponse(User user, List<BuildingSummaryResponse> buildings, Long activeBuildingId,
+                                          BoxStorageService box, PermissionService permissionService) {
         return new UserResponse(
                 user.id(),
                 user.unitId(),
@@ -33,16 +35,19 @@ public final class UserMapper {
                 resolveUrl(user.privacyAvatarBoxId(), box),
                 user.displayName(),
                 activeBuildingId,
-                buildings
+                buildings,
+                permissionService != null ? permissionService.getPermissions(user.roleId()) : List.of()
         );
     }
 
-    public static UserResponse toResponseFromContext(Context ctx, List<BuildingSummaryResponse> buildings, Long activeBuildingId, BoxStorageService box) {
+    public static UserResponse toResponseFromContext(Context ctx, List<BuildingSummaryResponse> buildings,
+                                                     Long activeBuildingId, BoxStorageService box,
+                                                     PermissionService permissionService) {
         User user = ctx.attribute(AuthenticationHandler.USER_ATTRIBUTE);
         if (user == null) {
             throw new IllegalStateException("Missing authenticated user in context");
         }
-        return toResponse(user, buildings, activeBuildingId, box);
+        return toResponse(user, buildings, activeBuildingId, box, permissionService);
     }
 
     /**

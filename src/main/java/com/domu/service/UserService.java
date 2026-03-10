@@ -1,5 +1,6 @@
 package com.domu.service;
 
+import com.domu.database.BuildingRepository;
 import com.domu.database.UserRepository;
 import com.domu.database.UserBuildingRepository;
 import com.domu.database.UserConfirmationRepository;
@@ -23,6 +24,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final UserBuildingRepository userBuildingRepository;
+    private final BuildingRepository buildingRepository;
     private final UserConfirmationRepository userConfirmationRepository;
     private final PasswordResetRepository passwordResetRepository;
     private final StaffRepository staffRepository;
@@ -32,6 +34,7 @@ public class UserService {
 
     @Inject
     public UserService(UserRepository userRepository, UserBuildingRepository userBuildingRepository,
+            BuildingRepository buildingRepository,
             UserConfirmationRepository userConfirmationRepository,
             PasswordResetRepository passwordResetRepository,
             StaffRepository staffRepository,
@@ -40,6 +43,7 @@ public class UserService {
             BoxStorageService boxStorageService) {
         this.userRepository = userRepository;
         this.userBuildingRepository = userBuildingRepository;
+        this.buildingRepository = buildingRepository;
         this.userConfirmationRepository = userConfirmationRepository;
         this.passwordResetRepository = passwordResetRepository;
         this.staffRepository = staffRepository;
@@ -95,9 +99,15 @@ public class UserService {
         validateRegistration(firstName, lastName, email, phone, documentNumber, resident, rawPassword);
         
         String normalizedEmail = email.toLowerCase();
-        userRepository.findByEmail(normalizedEmail).ifPresent(existing -> {
-            throw new UserAlreadyExistsException(normalizedEmail);
-        });
+        if (buildingId != null) {
+            if (userRepository.existsByEmailInBuilding(normalizedEmail, buildingId)) {
+                throw new UserAlreadyExistsException("Ya existe un usuario con este correo en esta comunidad");
+            }
+        } else {
+            userRepository.findByEmail(normalizedEmail).ifPresent(existing -> {
+                throw new UserAlreadyExistsException("A user with email " + normalizedEmail + " already exists");
+            });
+        }
 
         String passwordHash = passwordHasher.hash(rawPassword);
         User user = new User(
@@ -120,8 +130,12 @@ public class UserService {
                 null);
         User saved = userRepository.save(user);
         
-        if (buildingId != null) {
-            userBuildingRepository.addUserToBuilding(saved.id(), buildingId);
+        Long targetBuildingId = buildingId;
+        if (targetBuildingId == null && unitId != null) {
+            targetBuildingId = buildingRepository.findBuildingIdByUnitId(unitId);
+        }
+        if (targetBuildingId != null) {
+            userBuildingRepository.addUserToBuilding(saved.id(), targetBuildingId);
         }
         
         // Si el usuario es staff o conserje, crear registro en tabla staff
@@ -204,7 +218,7 @@ public class UserService {
         }
         String normalizedEmail = email.toLowerCase();
         userRepository.findByEmail(normalizedEmail).ifPresent(existing -> {
-            throw new UserAlreadyExistsException(normalizedEmail);
+            throw new UserAlreadyExistsException("A user with email " + normalizedEmail + " already exists");
         });
 
         String passwordHash = passwordHasher.hash(rawPassword);
@@ -236,9 +250,9 @@ public class UserService {
         }
         validateRegistration(firstName, lastName, email, phone, documentNumber, false, rawPassword);
         String normalizedEmail = email.toLowerCase();
-        userRepository.findByEmail(normalizedEmail).ifPresent(existing -> {
-            throw new ValidationException("Ya existe un usuario con este correo");
-        });
+        if (userRepository.existsByEmailInBuilding(normalizedEmail, buildingId)) {
+            throw new ValidationException("Ya existe un usuario con este correo en esta comunidad");
+        }
         String passwordHash = passwordHasher.hash(rawPassword);
         User user = new User(
                 null,

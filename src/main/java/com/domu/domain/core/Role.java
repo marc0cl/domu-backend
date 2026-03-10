@@ -6,7 +6,6 @@ public record Role(
         Long id,
         String name,
         String description,
-        String permissionsJson,
         String status
 ) {
     public Role {

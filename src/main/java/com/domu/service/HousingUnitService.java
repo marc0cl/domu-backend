@@ -47,6 +47,7 @@ public class HousingUnitService {
                 null,
                 buildingId,
                 request.getNumber().trim(),
+                request.getUnitType() != null ? request.getUnitType().trim() : "DEPARTAMENTO",
                 request.getTower() != null ? request.getTower().trim() : null,
                 request.getFloor() != null ? request.getFloor().trim() : null,
                 request.getAliquotPercentage(),
@@ -85,6 +86,7 @@ public class HousingUnitService {
                 existing.id(),
                 existing.buildingId(),
                 request.getNumber().trim(),
+                request.getUnitType() != null ? request.getUnitType().trim() : existing.unitType(),
                 request.getTower() != null ? request.getTower().trim() : null,
                 request.getFloor() != null ? request.getFloor().trim() : null,
                 request.getAliquotPercentage(),
@@ -167,12 +169,9 @@ public class HousingUnitService {
         User resident = userRepository.findById(residentUserId)
                 .orElseThrow(() -> new ValidationException("Residente no encontrado con id: " + residentUserId));
 
-        // Validar que el residente tenga acceso al edificio (debe estar en
-        // user_buildings)
+        // Asegurar que el residente esté en user_buildings para este edificio
         if (!userBuildingRepository.userHasAccessToBuilding(residentUserId, unit.buildingId())) {
-            throw new ValidationException(
-                    "El residente no tiene acceso a este edificio. " +
-                            "Primero debe ser agregado al edificio antes de asignarlo a una unidad.");
+            userBuildingRepository.addUserToBuilding(residentUserId, unit.buildingId());
         }
 
         // Actualizar el unit_id del usuario
@@ -232,15 +231,7 @@ public class HousingUnitService {
             throw new ValidationException("El número de unidad es requerido");
         }
 
-        if (request.getTower() == null || request.getTower().trim().isEmpty()) {
-            throw new ValidationException("La torre es requerida");
-        }
 
-        if (request.getFloor() == null || request.getFloor().trim().isEmpty()) {
-            throw new ValidationException("El piso es requerido");
-        }
-
-        // Validar que los valores numéricos sean positivos si están presentes
         if (request.getAliquotPercentage() != null &&
                 request.getAliquotPercentage().compareTo(java.math.BigDecimal.ZERO) < 0) {
             throw new ValidationException("La alícuota no puede ser negativa");

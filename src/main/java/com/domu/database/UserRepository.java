@@ -71,6 +71,25 @@ public class UserRepository {
         }
     }
 
+    public void updateRoleId(Long userId, Long roleId) {
+        String sql = "UPDATE users SET role_id = ? WHERE id = ?";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            if (roleId != null) {
+                statement.setLong(1, roleId);
+            } else {
+                statement.setNull(1, Types.BIGINT);
+            }
+            statement.setLong(2, userId);
+            int updated = statement.executeUpdate();
+            if (updated == 0) {
+                throw new RepositoryException("No user updated");
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error updating user role", e);
+        }
+    }
+
     public void updateUnitId(Long userId, Long unitId) {
         String sql = "UPDATE users SET unit_id = ? WHERE id = ?";
         try (Connection connection = dataSource.getConnection();
@@ -84,6 +103,32 @@ public class UserRepository {
             statement.executeUpdate();
         } catch (SQLException e) {
             throw new RepositoryException("Error updating user unit_id", e);
+        }
+    }
+
+    /**
+     * Verifica si existe un usuario con este email en el edificio dado.
+     * Un usuario está "en" un edificio si tiene user_buildings o su unidad pertenece al edificio.
+     */
+    public boolean existsByEmailInBuilding(String email, Long buildingId) {
+        if (email == null || buildingId == null) return false;
+        String sql = """
+                SELECT 1 FROM users u
+                WHERE u.email = ?
+                  AND (EXISTS (SELECT 1 FROM user_buildings ub WHERE ub.user_id = u.id AND ub.building_id = ?)
+                       OR EXISTS (SELECT 1 FROM housing_units hu WHERE hu.id = u.unit_id AND hu.building_id = ?))
+                LIMIT 1
+                """;
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, email);
+            statement.setLong(2, buildingId);
+            statement.setLong(3, buildingId);
+            try (ResultSet rs = statement.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Error checking email in building", e);
         }
     }
 
@@ -232,15 +277,23 @@ public class UserRepository {
 
     public record ChatNeighborSummary(Long id, String unitNumber, String displayName, String avatarUrl, String privacyAvatarBoxId) {}
 
+    /**
+     * Obtiene residentes del edificio (excluye administradores, conserjes y personal).
+     * Solo incluye usuarios con rol residente (2) o comité (5).
+     * Incluye ACTIVE y PENDING (pendientes de confirmar correo).
+     * Incluye usuarios por user_buildings O por unidad en el edificio (multi-tenant).
+     */
     public List<ResidentWithUnit> findResidentsByBuilding(Long buildingId) {
         String sql = """
                 SELECT DISTINCT u.id, u.unit_id, u.role_id, u.first_name, u.last_name, u.email, u.phone,
                        u.document_number, u.resident, u.created_at, u.status,
                        hu.number AS unit_number, hu.tower, hu.floor
                 FROM users u
-                INNER JOIN user_buildings ub ON ub.user_id = u.id AND ub.building_id = ?
+                LEFT JOIN user_buildings ub ON ub.user_id = u.id AND ub.building_id = ?
                 LEFT JOIN housing_units hu ON hu.id = u.unit_id AND hu.building_id = ?
-                WHERE u.status = 'ACTIVE'
+                WHERE u.status IN ('ACTIVE', 'PENDING', 'INACTIVE')
+                  AND u.role_id NOT IN (1, 3, 4)
+                  AND (ub.user_id IS NOT NULL OR hu.id IS NOT NULL)
                 ORDER BY hu.floor, hu.number, u.first_name, u.last_name
                 """;
         List<ResidentWithUnit> residents = new ArrayList<>();
@@ -256,6 +309,39 @@ public class UserRepository {
             return residents;
         } catch (SQLException e) {
             throw new RepositoryException("Error fetching residents by building", e);
+        }
+    }
+
+    /**
+     * Obtiene administradores, conserjes y personal del edificio.
+     * Incluye por user_buildings O por unidad en el edificio (multi-tenant).
+     */
+    public List<ResidentWithUnit> findBuildingStaffByBuilding(Long buildingId) {
+        String sql = """
+                SELECT DISTINCT u.id, u.unit_id, u.role_id, u.first_name, u.last_name, u.email, u.phone,
+                       u.document_number, u.resident, u.created_at, u.status,
+                       hu.number AS unit_number, hu.tower, hu.floor
+                FROM users u
+                LEFT JOIN user_buildings ub ON ub.user_id = u.id AND ub.building_id = ?
+                LEFT JOIN housing_units hu ON hu.id = u.unit_id AND hu.building_id = ?
+                WHERE u.status IN ('ACTIVE', 'INACTIVE')
+                  AND u.role_id IN (1, 3, 4)
+                  AND (ub.user_id IS NOT NULL OR hu.id IS NOT NULL)
+                ORDER BY u.role_id, u.first_name, u.last_name
+                """;
+        List<ResidentWithUnit> staff = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, buildingId);
+            statement.setLong(2, buildingId);
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    staff.add(mapResidentWithUnit(rs));
+                }
+            }
+            return staff;
+        } catch (SQLException e) {
+            throw new RepositoryException("Error fetching building staff", e);
         }
     }
 

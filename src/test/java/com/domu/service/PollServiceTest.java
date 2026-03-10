@@ -38,12 +38,16 @@ class PollServiceTest {
     @Mock
     private NotificationService notificationService;
 
+    @Mock
+    private PermissionService permissionService;
+
     private PollService pollService;
 
     @BeforeEach
     void setUp() {
-        pollService = new PollService(pollRepository, buildingRepository, userBuildingRepository, notificationService);
+        pollService = new PollService(pollRepository, buildingRepository, userBuildingRepository, notificationService, permissionService);
     }
+
 
     @Test
     void createShouldRejectNonAdminOrConcierge() {

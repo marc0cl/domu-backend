@@ -319,8 +319,8 @@ public class BuildingRepository {
 
     private void insertBlankHousingUnits(Connection connection, Long buildingId, int unitsCount) throws SQLException {
         String unitSql = """
-                INSERT INTO housing_units (building_id, number, tower, floor, status)
-                VALUES (?, '', '', '', 'ACTIVE')
+                INSERT INTO housing_units (building_id, number, unit_type, tower, floor, status)
+                VALUES (?, '', 'DEPARTAMENTO', '', '', 'ACTIVE')
                 """;
         try (PreparedStatement statement = connection.prepareStatement(unitSql)) {
             for (int i = 0; i < unitsCount; i++) {
